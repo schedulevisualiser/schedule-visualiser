@@ -56,13 +56,19 @@ there is no server-side processing, which matters for confidential programmes.
      threshold (default 0 days). This filter also applies to discipline and
      full-network views, so you can see e.g. "the critical activities within
      Environmental".
-4. **Hover any node** for a tooltip with its full WBS breadcrumb, status,
-   float and dates — essential context when many activities share generic
-   names (e.g. several "Client Review" tasks under different report
-   chapters). Search results likewise show each activity's parent WBS.
-5. Click any node for full details (dates, float, WBS, relationship list).
+4. **Click any node** for a tooltip with its full WBS breadcrumb, status,
+   float and dates (it dismisses as soon as the mouse moves) — essential
+   context when many activities share generic names (e.g. several "Client
+   Review" tasks under different report chapters). Search results likewise
+   show each activity's parent WBS.
+5. **Colours**: each level-1 WBS band (discipline) has its own colour, shown
+   in the legend; deeper WBS levels use progressively lighter tints of the
+   same hue, so depth is readable at a glance. A **red outline** (never a
+   fill) marks critical — expanding a WBS group in WBS mode animates its
+   children out of the parent bubble while the camera stays put.
+6. Click any node for full details (dates, float, WBS, relationship list).
    **Double-click a node** to re-centre the trace on it.
-6. **Export PNG** saves the current diagram as an image.
+7. **Export PNG** saves the current diagram as an image.
 
 Schedules with ≤ 400 activities draw in full on load; larger ones start in
 search-and-trace mode (you can still force **Full network**).

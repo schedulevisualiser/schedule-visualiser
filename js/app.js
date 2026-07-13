@@ -22,6 +22,70 @@
   // set for one render to keep the camera where it is (expand/collapse in
   // place) instead of re-fitting to the whole diagram
   let keepViewportOnce = false;
+  // set for one render to animate nodes from their previous positions
+  // ("bubbles opening"); new nodes grow out of morphOrigin (the clicked node)
+  let animateNext = false;
+  let morphOrigin = null;
+
+  // ---------- Discipline colours ----------
+  // Categorical palette (validated, light surface), assigned to level-1 WBS
+  // bands in fixed order. Red is deliberately absent: red = critical outline.
+  const DISCIPLINE_PALETTE = [
+    "#2a78d6", // blue
+    "#1baf7a", // aqua
+    "#eda100", // yellow
+    "#008300", // green
+    "#4a3aa7", // violet
+    "#e87ba4", // magenta
+    "#eb6834", // orange
+  ];
+  const NEUTRAL_SERIES = "#64748b"; // disciplines beyond the palette
+  const CRITICAL_RED = "#d03b3b";   // status red - reserved, never a discipline
+  let disciplineColour = new Map(); // discipline name -> base hex
+
+  function assignDisciplineColours() {
+    disciplineColour = new Map();
+    model.disciplines.forEach((d, i) => {
+      disciplineColour.set(d.name, DISCIPLINE_PALETTE[i] || NEUTRAL_SERIES);
+    });
+  }
+
+  /** Mix a hex colour towards white; frac = colour share (0..1). */
+  function tint(hex, frac) {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = (c) => Math.round(c * frac + 255 * (1 - frac));
+    return (
+      "rgb(" + mix((n >> 16) & 255) + "," + mix((n >> 8) & 255) + "," + mix(n & 255) + ")"
+    );
+  }
+
+  // Fill lightness encodes WBS depth: level 1 strongest, deeper = lighter.
+  const DEPTH_FRACS = [0.34, 0.25, 0.18, 0.13, 0.09];
+
+  function colourFor(discipline, depth) {
+    const base = disciplineColour.get(discipline) || NEUTRAL_SERIES;
+    const f = DEPTH_FRACS[Math.min(Math.max(depth || 1, 1), DEPTH_FRACS.length) - 1];
+    return { bg: tint(base, f), bd: base };
+  }
+
+  function buildLegend() {
+    const swatches = model.disciplines
+      .map((d) => {
+        const base = disciplineColour.get(d.name) || NEUTRAL_SERIES;
+        return (
+          '<span><span class="legend-swatch disc" style="background:' +
+          tint(base, 0.34) + ";border-color:" + base + '"></span>' +
+          escapeHtml(d.name) + "</span>"
+        );
+      })
+      .join("");
+    $("legend").innerHTML =
+      swatches +
+      '<span><span class="legend-swatch crit-outline"></span>Critical</span>' +
+      '<span><span class="legend-swatch diamond"></span>Milestone</span>' +
+      '<span><span class="legend-swatch focus-ring"></span>Traced</span>' +
+      "<span>Double-click: trace activity / expand WBS group · Right-click: collapse group</span>";
+  }
   // what is currently drawn, so option changes can re-render the same view
   let lastView = { type: null, wbsId: null }; // type: full | trace | wbs
 
@@ -126,6 +190,8 @@
       // WBS tree in the sidebar
       buildWbsTree();
       buildWbsTreeDom();
+      assignDisciplineColours();
+      buildLegend();
 
       // WBS-mode roll-up level selector (level 1 = disciplines)
       const lvl = $("wbsLevelSelect");
@@ -386,8 +452,12 @@
     if (task.status === "TK_Complete") classes.push("complete");
     if (task.id === focusTaskId) classes.push("focus");
     const w = widths && widths[task.id] ? widths[task.id] : NODE_W;
-    const data = { id: task.id, label, w, tmw: Math.max(w - 15, 90) };
-    if (groupsOn) data.parent = "wbs-" + task.wbsId;
+    const col = colourFor(task.discipline, wbsTree.depths.get(task.wbsId) || 3);
+    const data = {
+      id: task.id, label, w, tmw: Math.max(w - 15, 90),
+      bg: col.bg, bd: col.bd,
+    };
+    if (groupsOn && !wbsMode) data.parent = "wbs-" + task.wbsId;
     return { data, classes: classes.join(" ") };
   }
 
@@ -615,8 +685,12 @@
       classes.push("focus");
     }
     const w = widths && widths[g.id] ? widths[g.id] : NODE_W;
+    const col = colourFor(g.discipline, wbsTree.depths.get(g.wbsId) || 1);
     return {
-      data: { id: g.id, label, w, tmw: Math.max(w - 15, 130) },
+      data: {
+        id: g.id, label, w, tmw: Math.max(w - 15, 130),
+        bg: col.bg, bd: col.bd,
+      },
       classes: classes.join(" "),
     };
   }
@@ -667,6 +741,8 @@
               label: (w && w.name) || "",
               w: NODE_W,
               tmw: 300,
+              bg: "#f1f1ee",
+              bd: "#b9c4cd",
             },
             classes: "wbs-group",
           });
@@ -683,6 +759,13 @@
     hideTooltip();
     const hadElements = cy.nodes().length > 0;
     const viewport = { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } };
+    // remember where everything was, so expand/collapse can animate from there
+    const oldPositions = new Map();
+    if (animateNext) {
+      cy.nodes().forEach((n) => {
+        if (!n.isParent()) oldPositions.set(n.id(), { x: n.position("x"), y: n.position("y") });
+      });
+    }
     cy.startBatch();
     cy.elements().remove();
     cy.add(elements);
@@ -712,6 +795,21 @@
       cy.fit(undefined, 40);
     }
     keepViewportOnce = false;
+
+    // "bubbles opening": every node animates from where it was; brand-new
+    // nodes (an expanded group's children) grow out of the clicked node
+    if (animateNext && hadElements) {
+      cy.nodes().forEach((n) => {
+        if (n.isParent()) return;
+        const target = { x: n.position("x"), y: n.position("y") };
+        const from = oldPositions.get(n.id()) || morphOrigin;
+        if (!from || (from.x === target.x && from.y === target.y)) return;
+        n.position(from);
+        n.animate({ position: target }, { duration: 380, easing: "ease-in-out-quad" });
+      });
+    }
+    animateNext = false;
+    morphOrigin = null;
     updateRuler();
   }
 
@@ -971,11 +1069,11 @@
             shape: "round-rectangle",
             width: "data(w)",
             height: 52,
-            "background-color": "#243447",
+            "background-color": "data(bg)",
             "border-width": 1.5,
-            "border-color": "#3d5875",
+            "border-color": "data(bd)",
             label: "data(label)",
-            color: "#dbe7f3",
+            color: "#0b0b0b",
             "font-size": 11,
             "text-wrap": "wrap",
             "text-max-width": "data(tmw)",
@@ -987,9 +1085,7 @@
           selector: "node.wbsnode",
           style: {
             height: 58,
-            "background-color": "#1c2d40",
-            "border-color": "#55759a",
-            "border-width": 1.8,
+            "border-width": 2.2,
             "font-size": 10.5,
           },
         },
@@ -997,17 +1093,17 @@
           selector: "node.wbs-group",
           style: {
             shape: "round-rectangle",
-            "background-color": "#141e2a",
-            "background-opacity": 0.5,
+            "background-color": "#0b0b0b",
+            "background-opacity": 0.03,
             "border-width": 1.2,
             "border-style": "dashed",
-            "border-color": "#4f6c8c",
+            "border-color": "#b9c4cd",
             label: "data(label)",
             "text-valign": "top",
             "text-halign": "center",
             "font-size": 12,
             "font-weight": "bold",
-            color: "#f5b942",
+            color: "#52514e",
             "text-wrap": "wrap",
             "text-max-width": 320,
             "text-margin-y": -4,
@@ -1020,37 +1116,37 @@
         },
         {
           selector: "node.critical",
-          style: { "background-color": "#4a1420", "border-color": "#e5484d", "border-width": 2 },
+          style: { "border-color": CRITICAL_RED, "border-width": 3 },
         },
-        { selector: "node.complete", style: { opacity: 0.55 } },
+        { selector: "node.complete", style: { opacity: 0.5 } },
         {
           selector: "node.focus",
-          style: { "border-color": "#f5b942", "border-width": 3.5 },
+          style: { "border-color": "#c77d00", "border-width": 4 },
         },
         {
           selector: "node.selected",
-          style: { "overlay-color": "#f5b942", "overlay-opacity": 0.18, "overlay-padding": 6 },
+          style: { "overlay-color": "#c77d00", "overlay-opacity": 0.15, "overlay-padding": 6 },
         },
         {
           selector: "edge",
           style: {
             width: 1.6,
             "curve-style": "bezier",
-            "line-color": "#4a6076",
+            "line-color": "#9aa7b4",
             "target-arrow-shape": "triangle",
-            "target-arrow-color": "#4a6076",
+            "target-arrow-color": "#9aa7b4",
             "arrow-scale": 1.1,
             label: "data(label)",
             "font-size": 9,
-            color: "#8fa8c0",
-            "text-background-color": "#101923",
-            "text-background-opacity": 0.85,
+            color: "#52514e",
+            "text-background-color": "#fcfcfb",
+            "text-background-opacity": 0.9,
             "text-background-padding": 2,
           },
         },
         {
           selector: "edge.critical-edge",
-          style: { "line-color": "#e5484d", "target-arrow-color": "#e5484d", width: 2.4 },
+          style: { "line-color": CRITICAL_RED, "target-arrow-color": CRITICAL_RED, width: 2.4 },
         },
       ],
     });
@@ -1088,6 +1184,8 @@
         // drill down: expand this group into its next level (or its tasks)
         wbsExpanded.add(id.slice(2));
         keepViewportOnce = true;
+        animateNext = true;
+        morphOrigin = { x: evt.target.position("x"), y: evt.target.position("y") };
         busy("Expanding…", rerenderLastView);
       }
     });
@@ -1104,6 +1202,8 @@
       if (parentWbs && wbsExpanded.has(parentWbs)) {
         wbsExpanded.delete(parentWbs);
         keepViewportOnce = true;
+        animateNext = true;
+        morphOrigin = { x: evt.target.position("x"), y: evt.target.position("y") };
         busy("Collapsing…", rerenderLastView);
       }
     });
@@ -1320,7 +1420,7 @@
     $("exportBtn").addEventListener("click", () => {
       if (!cy.nodes().length) return;
       busy("Exporting PNG…", () => {
-        const png = cy.png({ full: true, scale: 2, bg: "#101923" });
+        const png = cy.png({ full: true, scale: 2, bg: "#fcfcfb" });
         const a = document.createElement("a");
         a.href = png;
         a.download = "network-diagram.png";
