@@ -68,7 +68,11 @@ there is no server-side processing, which matters for confidential programmes.
    children out of the parent bubble while the camera stays put.
 6. Click any node for full details (dates, float, WBS, relationship list).
    **Double-click a node** to re-centre the trace on it.
-7. **Export PNG** saves the current diagram as an image.
+7. **Undo** (toolbar button or **Ctrl+Z**) steps the visualisation back
+   through your last 50 changes — traces, drill-downs, filters, layout and
+   mode toggles — restoring the camera position along with the view. The
+   history resets when you load a new file.
+8. **Export PNG** saves the current diagram as an image.
 
 Schedules with ≤ 400 activities draw in full on load; larger ones start in
 search-and-trace mode (you can still force **Full network**).

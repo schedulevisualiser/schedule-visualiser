@@ -145,6 +145,7 @@
           spinnerDepth = 0;
           $("spinner").style.display = "none";
         }
+        commitState(); // record the state this action produced (for undo)
       }
     };
     if (document.visibilityState === "visible") {
@@ -153,6 +154,100 @@
     } else {
       setTimeout(run, 0); // rAF never fires in hidden tabs
     }
+  }
+
+  // ---------- Undo ----------
+  // Every user action that changes the visualisation calls pushUndo() first,
+  // snapshotting the whole view state. Undo (button / Ctrl+Z) pops one back.
+  const undoStack = [];
+  const UNDO_LIMIT = 50;
+
+  function captureState() {
+    return {
+      lastView: { ...lastView },
+      focusTaskId,
+      selectedProjId,
+      wbsMode,
+      wbsExpanded: [...wbsExpanded],
+      wbsLevel: $("wbsLevelSelect").value,
+      durScale,
+      groupsOn,
+      layout: $("layoutSelect").value,
+      direction: $("directionSelect").value,
+      depth: $("depthSelect").value,
+      criticalOnly: $("criticalOnly").checked,
+      floatThreshold: $("floatThreshold").value,
+      viewport: cy ? { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } } : null,
+    };
+  }
+
+  // State as of the end of the last completed action. pushUndo() pushes THIS
+  // rather than reading the live controls, because change events fire after
+  // a control's value has already flipped - reading live would snapshot the
+  // new value and undo couldn't revert it.
+  let lastCommitted = null;
+
+  function commitState() {
+    if (model) lastCommitted = captureState();
+  }
+
+  function pushUndo() {
+    if (!model || !lastCommitted) return;
+    const s = { ...lastCommitted };
+    // camera, however, should be wherever the user has panned it right now
+    if (cy) s.viewport = { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } };
+    // ignore camera position when deciding whether anything changed
+    s._key = JSON.stringify({ ...s, viewport: null });
+    const top = undoStack[undoStack.length - 1];
+    if (top && top._key === s._key) return; // nothing changed since last push
+    undoStack.push(s);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    updateUndoBtn();
+  }
+
+  function updateUndoBtn() {
+    $("undoBtn").disabled = undoStack.length === 0;
+  }
+
+  function applyState(s) {
+    // restore controls without firing their change handlers
+    $("layoutSelect").value = s.layout;
+    $("directionSelect").value = s.direction;
+    $("depthSelect").value = s.depth;
+    $("criticalOnly").checked = s.criticalOnly;
+    $("floatThreshold").value = s.floatThreshold;
+    selectedProjId = s.selectedProjId;
+    if ($("projectSelect").options.length) $("projectSelect").value = s.selectedProjId;
+    $("wbsLevelSelect").value = s.wbsLevel;
+    toggleWbsMode(s.wbsMode);          // also shows/hides the level dropdown
+    wbsExpanded = new Set(s.wbsExpanded); // after toggle, which resets it
+    durScale = s.durScale;
+    $("durScaleBtn").textContent = "Duration bars: " + (durScale ? "On" : "Off");
+    $("durScaleBtn").classList.toggle("active", durScale);
+    groupsOn = s.groupsOn;
+    $("groupsBtn").textContent = "Groups: " + (groupsOn ? "On" : "Off");
+    $("groupsBtn").classList.toggle("active", groupsOn);
+    focusTaskId = s.focusTaskId;
+    lastView = { ...s.lastView };
+
+    busy("Undoing…", () => {
+      if (lastView.type) {
+        rerenderLastView();
+        if (lastView.type === "wbs") selectWbsRow(lastView.wbsId);
+      } else {
+        cy.elements().remove();
+        timeScale = null;
+        setStatus("Undone — nothing displayed. Pick a WBS branch, search, or use 'Full network'.");
+      }
+      if (s.viewport) cy.viewport(s.viewport);
+      updateRuler();
+    });
+  }
+
+  function undo() {
+    if (!undoStack.length || !model) return;
+    applyState(undoStack.pop());
+    updateUndoBtn();
   }
 
   // ---------- File loading ----------
@@ -167,6 +262,9 @@
       focusTaskId = null;
       selectedProjId = "";
       lastView = { type: null, wbsId: null };
+      undoStack.length = 0; // undo history belongs to the previous file
+      lastCommitted = null;
+      updateUndoBtn();
 
       const nTasks = model.tasks.size;
       const nCrit = [...model.tasks.values()].filter((t) => t.isCritical).length;
@@ -370,6 +468,7 @@
         tog.textContent = open ? "▸" : "▾";
       });
       row.addEventListener("click", () => {
+        pushUndo();
         selectWbsRow(id);
         busy("Drawing " + w.name + "…", () => renderWbsView(id));
       });
@@ -965,6 +1064,7 @@
   }
 
   function focusOn(taskId) {
+    pushUndo();
     focusTaskId = taskId;
     busy("Tracing…", () => {
       renderTrace();
@@ -1048,6 +1148,7 @@
         $("searchInput").value = "";
         const wbsId = item.getAttribute("data-wbs");
         if (wbsId) {
+          pushUndo();
           selectWbsRow(wbsId);
           busy("Drawing…", () => renderWbsView(wbsId));
         } else {
@@ -1182,6 +1283,7 @@
         focusOn(id);
       } else if (id.startsWith("g-")) {
         // drill down: expand this group into its next level (or its tasks)
+        pushUndo();
         wbsExpanded.add(id.slice(2));
         keepViewportOnce = true;
         animateNext = true;
@@ -1200,6 +1302,7 @@
         parentWbs = model.tasks.get(id).wbsId;
       }
       if (parentWbs && wbsExpanded.has(parentWbs)) {
+        pushUndo();
         wbsExpanded.delete(parentWbs);
         keepViewportOnce = true;
         animateNext = true;
@@ -1330,6 +1433,7 @@
       (members.length > 100 ? " — first 100 shown" : "") + "</h4>" +
       "<ul class='rel-list'>" + rows + "</ul>";
     $("openGroupBtn").addEventListener("click", () => {
+      pushUndo();
       if (wbsMode) toggleWbsMode(false);
       selectWbsRow(wbsId);
       busy("Drawing…", () => renderWbsView(wbsId));
@@ -1371,48 +1475,71 @@
         if (cy) cy.nodes().removeClass("selected");
         $("searchResults").style.display = "none";
       }
+      // Ctrl+Z: undo the last view change (unless typing in a field)
+      const inField =
+        e.target instanceof Element && e.target.closest("input, select, textarea");
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "z" && !inField) {
+        e.preventDefault();
+        undo();
+      }
     });
+
+    $("undoBtn").addEventListener("click", undo);
 
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly", "floatThreshold"]) {
       $(id).addEventListener("change", () => {
-        if (model && lastView.type) busy("Updating view…", rerenderLastView);
+        if (!model) return;
+        pushUndo();
+        if (lastView.type) busy("Updating view…", rerenderLastView);
       });
     }
 
     $("wbsModeBtn").addEventListener("click", () => {
+      pushUndo();
       toggleWbsMode(!wbsMode);
       if (model && lastView.type) busy("Updating view…", rerenderLastView);
+      else commitState();
     });
 
     $("wbsLevelSelect").addEventListener("change", (e) => {
       if (!model) return;
+      pushUndo();
       setUniformWbsLevel(parseInt(e.target.value, 10) || 1);
       if (wbsMode && lastView.type) busy("Updating view…", rerenderLastView);
+      else commitState();
     });
 
     $("groupsBtn").addEventListener("click", () => {
+      pushUndo();
       groupsOn = !groupsOn;
       const btn = $("groupsBtn");
       btn.textContent = "Groups: " + (groupsOn ? "On" : "Off");
       btn.classList.toggle("active", groupsOn);
       if (model && lastView.type) busy("Updating view…", rerenderLastView);
+      else commitState();
     });
 
     $("durScaleBtn").addEventListener("click", () => {
+      pushUndo();
       durScale = !durScale;
       const btn = $("durScaleBtn");
       btn.textContent = "Duration bars: " + (durScale ? "On" : "Off");
       btn.classList.toggle("active", durScale);
       if (model && lastView.type) busy("Updating view…", rerenderLastView);
+      else commitState();
     });
 
     $("projectSelect").addEventListener("change", (e) => {
+      if (!model) return;
+      pushUndo();
       selectedProjId = e.target.value;
       focusTaskId = null;
       busy("Updating view…", renderFullNetwork);
     });
 
     $("fullNetworkBtn").addEventListener("click", () => {
+      if (!model) return;
+      pushUndo();
       focusTaskId = null;
       busy("Drawing full network…", renderFullNetwork);
     });
