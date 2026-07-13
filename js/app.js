@@ -1,0 +1,1231 @@
+/*
+ * app.js - P6 Visualiser
+ * Wires together: file loading -> XER parsing -> search -> trace/discipline views
+ * -> Cytoscape rendering.
+ */
+
+(function () {
+  "use strict";
+
+  // ---------- State ----------
+  let model = null;        // parsed XER: { projects, tasks, links, disciplines, warnings }
+  let cy = null;           // Cytoscape instance
+  let focusTaskId = null;  // activity the trace is centred on
+  let selectedProjId = ""; // "" = all projects
+  let wbsTree = null;      // { children:Map, subCount:Map, roots:[] }
+  let durScale = false;    // stretch nodes to span their duration (time layout)
+  let groupsOn = false;    // draw compound boxes around WBS groups
+  let wbsMode = false;     // roll the diagram up to one node per WBS group
+  // what is currently drawn, so option changes can re-render the same view
+  let lastView = { type: null, wbsId: null }; // type: full | trace | wbs
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- Helpers ----------
+  function fmtDate(d) {
+    if (!d) return "—";
+    return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  function fmtDays(n) {
+    if (n === null || n === undefined) return "—";
+    const r = Math.round(n * 10) / 10;
+    return r + "d";
+  }
+
+  function floatThreshold() {
+    const v = parseFloat($("floatThreshold").value);
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  function isCriticalTask(task) {
+    return task.totalFloatDays !== null && task.totalFloatDays <= floatThreshold();
+  }
+
+  function criticalOnly() {
+    return $("criticalOnly").checked;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function setStatus(msg, isError) {
+    const el = $("statusBar");
+    el.textContent = msg;
+    el.classList.toggle("error", !!isError);
+  }
+
+  // ---------- Loading spinner ----------
+  // Parsing and layout are synchronous, so we show the spinner, give the
+  // browser one frame to paint it, then run the heavy work.
+  let spinnerDepth = 0;
+  function busy(message, work) {
+    spinnerDepth++;
+    $("spinnerMsg").textContent = message;
+    $("spinner").style.display = "flex";
+    const run = () => {
+      try {
+        work();
+      } finally {
+        spinnerDepth--;
+        if (spinnerDepth <= 0) {
+          spinnerDepth = 0;
+          $("spinner").style.display = "none";
+        }
+      }
+    };
+    if (document.visibilityState === "visible") {
+      // double-rAF: spinner paints on the first frame, work runs on the next
+      requestAnimationFrame(() => requestAnimationFrame(run));
+    } else {
+      setTimeout(run, 0); // rAF never fires in hidden tabs
+    }
+  }
+
+  // ---------- File loading ----------
+  function loadXerText(text, fileName) {
+    busy("Reading " + fileName + "…", () => {
+      try {
+        model = XerParser.parseXer(text);
+      } catch (err) {
+        setStatus("Could not read " + fileName + ": " + err.message, true);
+        return;
+      }
+      focusTaskId = null;
+      selectedProjId = "";
+      lastView = { type: null, wbsId: null };
+
+      const nTasks = model.tasks.size;
+      const nCrit = [...model.tasks.values()].filter((t) => t.isCritical).length;
+      setStatus(
+        fileName + " — " + nTasks + " activities, " + model.links.length +
+        " relationships, " + nCrit + " critical" +
+        (model.warnings.length ? " ⚠ " + model.warnings.join(" ") : "")
+      );
+
+      // Project selector (only shown for multi-project files)
+      const sel = $("projectSelect");
+      sel.innerHTML = "";
+      if (model.projects.length > 1) {
+        sel.appendChild(new Option("All projects", ""));
+        for (const p of model.projects) sel.appendChild(new Option(p.name, p.id));
+        sel.style.display = "";
+      } else {
+        sel.style.display = "none";
+      }
+
+      // WBS tree in the sidebar
+      buildWbsTree();
+      buildWbsTreeDom();
+
+      $("searchInput").value = "";
+      $("searchInput").disabled = false;
+      $("detailsPanel").innerHTML =
+        '<p class="hint">Search for an activity above, or click a node in the diagram.</p>';
+
+      // Small schedules: show the whole network straight away.
+      if (nTasks <= 400) {
+        renderFullNetwork();
+      } else {
+        if (cy) cy.elements().remove();
+        setStatus(
+          fileName + " loaded (" + nTasks +
+          " activities). Pick a WBS branch, search for an activity, or use 'Full network'."
+        );
+      }
+    });
+  }
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // XER files are usually Windows-1252 encoded, not UTF-8.
+      let text;
+      try {
+        text = new TextDecoder("windows-1252").decode(reader.result);
+      } catch (e) {
+        text = new TextDecoder().decode(reader.result);
+      }
+      loadXerText(text, file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ---------- WBS tree ----------
+  function buildWbsTree() {
+    const children = new Map();
+    const directCounts = new Map();
+    for (const t of model.tasks.values()) {
+      directCounts.set(t.wbsId, (directCounts.get(t.wbsId) || 0) + 1);
+    }
+    const roots = [];
+    for (const [id, node] of model.wbs) {
+      if (node.parentId && model.wbs.has(node.parentId)) {
+        if (!children.has(node.parentId)) children.set(node.parentId, []);
+        children.get(node.parentId).push(id);
+      } else {
+        roots.push(id);
+      }
+    }
+    const subCount = new Map();
+    function calc(id) {
+      let c = directCounts.get(id) || 0;
+      for (const k of children.get(id) || []) c += calc(k);
+      subCount.set(id, c);
+      return c;
+    }
+    for (const r of roots) calc(r);
+    wbsTree = { children, subCount, roots };
+  }
+
+  function wbsDescendants(wbsId) {
+    const set = new Set([wbsId]);
+    const stack = [wbsId];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const k of wbsTree.children.get(cur) || []) {
+        set.add(k);
+        stack.push(k);
+      }
+    }
+    return set;
+  }
+
+  function buildWbsTreeDom() {
+    const container = $("wbsTree");
+    container.innerHTML = "";
+    if (!wbsTree || !wbsTree.roots.length) {
+      container.innerHTML = '<p class="hint">No WBS found in this file.</p>';
+      return;
+    }
+
+    function makeNode(id, depth) {
+      const w = model.wbs.get(id);
+      const kids = (wbsTree.children.get(id) || []).filter(
+        (k) => wbsTree.subCount.get(k) > 0
+      );
+      const wrap = document.createElement("div");
+
+      const row = document.createElement("div");
+      row.className = "wbs-row";
+      row.style.paddingLeft = depth * 14 + "px";
+      row.dataset.wbs = id;
+
+      const expanded = depth < 1; // root level starts open, deeper collapsed
+      const tog = document.createElement("span");
+      tog.className = "wbs-toggle";
+      tog.textContent = kids.length ? (expanded ? "▾" : "▸") : "";
+
+      const lbl = document.createElement("span");
+      lbl.className = "wbs-label";
+      lbl.textContent = w.name;
+      lbl.title = w.name;
+
+      const cnt = document.createElement("span");
+      cnt.className = "wbs-count";
+      cnt.textContent = wbsTree.subCount.get(id);
+
+      row.append(tog, lbl, cnt);
+      wrap.appendChild(row);
+
+      const kidsWrap = document.createElement("div");
+      if (!expanded) kidsWrap.style.display = "none";
+      for (const k of kids) kidsWrap.appendChild(makeNode(k, depth + 1));
+      wrap.appendChild(kidsWrap);
+
+      tog.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!kids.length) return;
+        const open = kidsWrap.style.display !== "none";
+        kidsWrap.style.display = open ? "none" : "";
+        tog.textContent = open ? "▸" : "▾";
+      });
+      row.addEventListener("click", () => {
+        selectWbsRow(id);
+        busy("Drawing " + w.name + "…", () => renderWbsView(id));
+      });
+      return wrap;
+    }
+
+    for (const r of wbsTree.roots) {
+      if (wbsTree.subCount.get(r) > 0) container.appendChild(makeNode(r, 0));
+    }
+  }
+
+  function selectWbsRow(wbsId) {
+    const container = $("wbsTree");
+    for (const r of container.querySelectorAll(".wbs-row.sel")) r.classList.remove("sel");
+    const row = container.querySelector('[data-wbs="' + CSS.escape(wbsId) + '"]');
+    if (row) row.classList.add("sel");
+  }
+
+  // ---------- Trace logic ----------
+  function visibleTasks() {
+    const out = [];
+    for (const t of model.tasks.values()) {
+      if (!selectedProjId || t.projId === selectedProjId) out.push(t);
+    }
+    return out;
+  }
+
+  /**
+   * From the focus task, walk predecessor and/or successor links.
+   * Returns { nodeIds:Set, linkIds:Set }
+   */
+  function trace(focusId) {
+    const direction = $("directionSelect").value; // both | pred | succ
+    const depthVal = $("depthSelect").value;      // "all" or a number
+    const maxDepth = depthVal === "all" ? Infinity : parseInt(depthVal, 10);
+    const critOnly = criticalOnly();
+
+    const nodeIds = new Set([focusId]);
+
+    function walk(startId, dir) {
+      let frontier = [startId];
+      let depth = 0;
+      while (frontier.length && depth < maxDepth) {
+        const next = [];
+        for (const id of frontier) {
+          const task = model.tasks.get(id);
+          const edges = dir === "up" ? task.predecessors : task.successors;
+          for (const link of edges) {
+            const otherId = dir === "up" ? link.predId : link.succId;
+            const other = model.tasks.get(otherId);
+            if (critOnly && !isCriticalTask(other)) continue;
+            if (!nodeIds.has(otherId)) {
+              nodeIds.add(otherId);
+              next.push(otherId);
+            }
+          }
+        }
+        frontier = next;
+        depth++;
+      }
+    }
+
+    if (direction === "both" || direction === "pred") walk(focusId, "up");
+    if (direction === "both" || direction === "succ") walk(focusId, "down");
+
+    // include every link whose two ends are both in the set
+    const linkIds = new Set();
+    for (const link of model.links) {
+      if (nodeIds.has(link.predId) && nodeIds.has(link.succId)) linkIds.add(link.id);
+    }
+    return { nodeIds, linkIds };
+  }
+
+  // ---------- Rendering ----------
+  function taskToNode(task, widths) {
+    const label = task.code + "\n" + task.name;
+    const classes = [];
+    if (isCriticalTask(task)) classes.push("critical");
+    if (task.isMilestone) classes.push("milestone");
+    if (task.status === "TK_Complete") classes.push("complete");
+    if (task.id === focusTaskId) classes.push("focus");
+    const w = widths && widths[task.id] ? widths[task.id] : NODE_W;
+    const data = { id: task.id, label, w, tmw: Math.max(w - 15, 90) };
+    if (groupsOn) data.parent = "wbs-" + task.wbsId;
+    return { data, classes: classes.join(" ") };
+  }
+
+  function linkToEdge(link) {
+    const pred = model.tasks.get(link.predId);
+    const succ = model.tasks.get(link.succId);
+    let label = "";
+    if (link.typeLabel !== "FS" || link.lagDays !== 0) {
+      label = link.typeLabel;
+      if (link.lagDays) label += (link.lagDays > 0 ? "+" : "") + fmtDays(link.lagDays);
+    }
+    const classes = [];
+    if (isCriticalTask(pred) && isCriticalTask(succ)) classes.push("critical-edge");
+    return {
+      data: { id: "e" + link.id, source: link.predId, target: link.succId, label },
+      classes: classes.join(" "),
+    };
+  }
+
+  // ---------- Time-scaled layout ----------
+  const NODE_W = 175;   // must match the node width in the Cytoscape style
+  const LANE_H = 78;    // vertical spacing between lanes
+  const GROUP_GAP = 55; // extra gap between discipline groups
+  let timeScale = null; // { min: epoch-ms of schedule start, pxPerDay }
+
+  function layoutMode() {
+    return $("layoutSelect").value; // time | logic
+  }
+
+  /**
+   * x = start date (left -> right through time); y = packed lanes, grouped
+   * by discipline. When durScale is on, each node's width spans its duration.
+   * `items` are tasks or WBS-group aggregates - anything with
+   * { id, start, finish, durationDays, isMilestone, discipline }.
+   * Returns { positions: {id:{x,y}}, widths: {id:px}|null } or null when no
+   * item has dates.
+   */
+  function computeTimePositions(items) {
+    const tasks = items;
+    const dated = tasks.filter((t) => t.start);
+    if (!dated.length) return null;
+
+    const min = Math.min(...dated.map((t) => t.start.getTime()));
+    const max = Math.max(...dated.map((t) => (t.finish || t.start).getTime()));
+    const days = Math.max(1, (max - min) / 86400000);
+    // sensible default density, clamped so tiny/huge schedules stay usable
+    let pxPerDay = 8;
+    if (days * pxPerDay > 30000) pxPerDay = 30000 / days;
+    if (days * pxPerDay < 1200) pxPerDay = 1200 / days;
+    timeScale = { min, pxPerDay };
+
+    // node width: fixed box, or duration-scaled bar when toggled on
+    // (durations are workdays; the axis is calendar days, so scale by ~7/5)
+    const widths = durScale ? {} : null;
+    const nodeWidth = (t) => {
+      if (t.isMilestone) return 70;
+      if (!durScale) return NODE_W;
+      const calDays = (t.durationDays || 0) * 1.4;
+      return Math.max(46, calDays * pxPerDay);
+    };
+
+    // group tasks by discipline, keeping the schedule's WBS order
+    const groups = new Map();
+    for (const t of tasks) {
+      const g = t.discipline || "";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(t);
+    }
+    const wbsOrder = model.disciplines.map((d) => d.name);
+    const groupNames = [...groups.keys()].sort((a, b) => {
+      const ia = wbsOrder.indexOf(a), ib = wbsOrder.indexOf(b);
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+    });
+
+    const positions = {};
+    let yBase = 40;
+    for (const gname of groupNames) {
+      // pack this group's activities into lanes: sort by start, drop each
+      // into the first lane whose previous node has cleared its x range
+      const items = groups.get(gname)
+        .map((t) => ({
+          t,
+          x: t.start ? ((t.start.getTime() - min) / 86400000) * pxPerDay : 0,
+        }))
+        .sort((a, b) => a.x - b.x);
+      const laneEnds = []; // rightmost occupied pixel per lane
+      for (const it of items) {
+        const w = nodeWidth(it.t);
+        if (widths && !it.t.isMilestone) widths[it.t.id] = Math.round(w);
+        let lane = laneEnds.findIndex((end) => end <= it.x - 6);
+        if (lane < 0) {
+          lane = laneEnds.length;
+          laneEnds.push(0);
+        }
+        laneEnds[lane] = it.x + w + 22;
+        positions[it.t.id] = {
+          x: it.x + w / 2,
+          y: yBase + lane * LANE_H,
+        };
+      }
+      yBase += laneEnds.length * LANE_H + GROUP_GAP;
+    }
+    return { positions, widths };
+  }
+
+  function updateRuler() {
+    const ruler = $("timeRuler");
+    const grid = $("gridlines");
+    const active = layoutMode() === "time" && timeScale && cy.nodes().length > 0;
+    ruler.style.display = active ? "" : "none";
+    if (!active) {
+      ruler.innerHTML = "";
+      grid.innerHTML = "";
+      return;
+    }
+    const zoom = cy.zoom();
+    const panX = cy.pan().x;
+    const width = $("graphWrap").clientWidth;
+    // label every Nth month so labels never collide when zoomed out
+    const pxPerMonthScreen = timeScale.pxPerDay * 30.4 * zoom;
+    const step = Math.max(1, Math.ceil(56 / pxPerMonthScreen));
+
+    let ticks = "";
+    let lines = "";
+    const d = new Date(timeScale.min);
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 400; i++) {
+      const x = ((d.getTime() - timeScale.min) / 86400000) * timeScale.pxPerDay * zoom + panX;
+      if (x > width) break;
+      if (x >= -100 && i % step === 0) {
+        const label =
+          d.toLocaleDateString(undefined, { month: "short" }) +
+          " '" + String(d.getFullYear()).slice(2);
+        ticks += '<div class="ruler-tick" style="left:' + x + 'px">' + label + "</div>";
+        lines += '<div class="gridline" style="left:' + x + 'px"></div>';
+      }
+      d.setMonth(d.getMonth() + 1);
+    }
+    ruler.innerHTML = ticks;
+    grid.innerHTML = lines;
+  }
+
+  /**
+   * Roll the current view up to one node per WBS group: aggregate dates,
+   * counts and criticality, and merge task links that cross group
+   * boundaries into single edges.
+   */
+  function aggregateByWbs(nodeIds, linkIds) {
+    const groups = new Map();
+    for (const id of nodeIds) {
+      const t = model.tasks.get(id);
+      let g = groups.get(t.wbsId);
+      if (!g) {
+        g = {
+          id: "g-" + t.wbsId,
+          wbsId: t.wbsId,
+          name: t.wbsName || "(unnamed WBS)",
+          discipline: t.discipline,
+          count: 0,
+          critCount: 0,
+          start: null,
+          finish: null,
+          durationDays: 0,
+          isMilestone: false,
+        };
+        groups.set(t.wbsId, g);
+      }
+      g.count++;
+      if (isCriticalTask(t)) g.critCount++;
+      if (t.start && (!g.start || t.start < g.start)) g.start = t.start;
+      const f = t.finish || t.start;
+      if (f && (!g.finish || f > g.finish)) g.finish = f;
+    }
+    for (const g of groups.values()) {
+      // span in calendar days; nodeWidth() multiplies by 1.4 (workday
+      // fudge) so divide it back out here
+      if (g.start && g.finish) {
+        g.durationDays = (g.finish.getTime() - g.start.getTime()) / 86400000 / 1.4;
+      }
+    }
+
+    const edgeMap = new Map();
+    for (const link of model.links) {
+      if (!linkIds.has(link.id)) continue;
+      const p = model.tasks.get(link.predId);
+      const s = model.tasks.get(link.succId);
+      if (p.wbsId === s.wbsId) continue; // internal logic stays inside the node
+      const key = p.wbsId + " " + s.wbsId;
+      let e = edgeMap.get(key);
+      if (!e) {
+        e = { predWbs: p.wbsId, succWbs: s.wbsId, count: 0, critical: false };
+        edgeMap.set(key, e);
+      }
+      e.count++;
+      if (isCriticalTask(p) && isCriticalTask(s)) e.critical = true;
+    }
+    return { items: [...groups.values()], edges: [...edgeMap.values()] };
+  }
+
+  function groupToNode(g, widths) {
+    const label =
+      g.name + "\n" + g.count + (g.count === 1 ? " activity" : " activities") +
+      (g.critCount ? " · " + g.critCount + " critical" : "");
+    const classes = ["wbsnode"];
+    if (g.critCount > 0) classes.push("critical");
+    if (
+      focusTaskId &&
+      model.tasks.has(focusTaskId) &&
+      model.tasks.get(focusTaskId).wbsId === g.wbsId
+    ) {
+      classes.push("focus");
+    }
+    const w = widths && widths[g.id] ? widths[g.id] : NODE_W;
+    return {
+      data: { id: g.id, label, w, tmw: Math.max(w - 15, 130) },
+      classes: classes.join(" "),
+    };
+  }
+
+  function aggEdgeToElement(e) {
+    return {
+      data: {
+        id: "ge-" + e.predWbs + "-" + e.succWbs,
+        source: "g-" + e.predWbs,
+        target: "g-" + e.succWbs,
+        label: e.count > 1 ? "×" + e.count : "",
+      },
+      classes: e.critical ? "critical-edge" : "",
+    };
+  }
+
+  function renderElements(nodeIds, linkIds) {
+    const elements = [];
+    let timeLayout = null;
+
+    if (wbsMode) {
+      const agg = aggregateByWbs(nodeIds, linkIds);
+      if (layoutMode() === "time") timeLayout = computeTimePositions(agg.items);
+      for (const g of agg.items) {
+        elements.push(groupToNode(g, timeLayout && timeLayout.widths));
+      }
+      for (const e of agg.edges) elements.push(aggEdgeToElement(e));
+    } else {
+      const tasks = [...nodeIds].map((id) => model.tasks.get(id));
+      if (layoutMode() === "time") timeLayout = computeTimePositions(tasks);
+      if (groupsOn) {
+        // one compound box per WBS group present in the view
+        const groupIds = new Set();
+        for (const t of tasks) groupIds.add(t.wbsId);
+        for (const wbsId of groupIds) {
+          const w = model.wbs.get(wbsId);
+          elements.push({
+            data: {
+              id: "wbs-" + wbsId,
+              label: (w && w.name) || "",
+              w: NODE_W,
+              tmw: 300,
+            },
+            classes: "wbs-group",
+          });
+        }
+      }
+      for (const t of tasks) {
+        elements.push(taskToNode(t, timeLayout && timeLayout.widths));
+      }
+      for (const link of model.links) {
+        if (linkIds.has(link.id)) elements.push(linkToEdge(link));
+      }
+    }
+
+    hideTooltip();
+    cy.startBatch();
+    cy.elements().remove();
+    cy.add(elements);
+    cy.endBatch();
+
+    if (timeLayout) {
+      cy.layout({
+        name: "preset",
+        positions: (node) => timeLayout.positions[node.id()],
+        fit: false,
+      }).run();
+    } else {
+      timeScale = null;
+      cy.layout({
+        name: "dagre",
+        rankDir: "LR",
+        nodeSep: 18,
+        rankSep: 90,
+        edgeSep: 10,
+        padding: 30,
+      }).run();
+    }
+    cy.fit(undefined, 40);
+    updateRuler();
+  }
+
+  function linksAmong(nodeIds) {
+    const linkIds = new Set();
+    for (const link of model.links) {
+      if (nodeIds.has(link.predId) && nodeIds.has(link.succId)) linkIds.add(link.id);
+    }
+    return linkIds;
+  }
+
+  function renderTrace() {
+    if (!model || !focusTaskId) return;
+    lastView = { type: "trace", discipline: null };
+    const { nodeIds, linkIds } = trace(focusTaskId);
+    renderElements(nodeIds, linkIds);
+    const t = model.tasks.get(focusTaskId);
+    let note = "";
+    if (criticalOnly()) {
+      note = isCriticalTask(t)
+        ? " (critical only)"
+        : " (critical only — note: this activity itself is not critical, TF " +
+          fmtDays(t.totalFloatDays) + ")";
+    }
+    setStatus(
+      "Tracing " + t.code + " — showing " + nodeIds.size + " activities, " +
+      linkIds.size + " relationships" + note +
+      (wbsMode ? " · rolled up to WBS groups" : "")
+    );
+  }
+
+  function renderFullNetwork() {
+    if (!model) return;
+    lastView = { type: "full", discipline: null };
+    let tasks = visibleTasks();
+    if (criticalOnly()) tasks = tasks.filter(isCriticalTask);
+    if (tasks.length > 2500) {
+      if (!confirm(
+        "This will draw " + tasks.length +
+        " activities, which may take a while. Continue?"
+      )) return;
+    }
+    const nodeIds = new Set(tasks.map((t) => t.id));
+    const linkIds = linksAmong(nodeIds);
+    renderElements(nodeIds, linkIds);
+    setStatus(
+      "Full network — " + nodeIds.size + " activities, " + linkIds.size +
+      " relationships" + (criticalOnly() ? " (critical only)" : "") +
+      (wbsMode ? " · rolled up to WBS groups" : "")
+    );
+  }
+
+  function renderWbsView(wbsId) {
+    if (!model || !wbsId || !model.wbs.has(wbsId)) return;
+    lastView = { type: "wbs", wbsId };
+    focusTaskId = null;
+    const name = model.wbs.get(wbsId).name;
+    const inSubtree = wbsDescendants(wbsId);
+    let tasks = visibleTasks().filter((t) => inSubtree.has(t.wbsId));
+    if (criticalOnly()) tasks = tasks.filter(isCriticalTask);
+    const nodeIds = new Set(tasks.map((t) => t.id));
+    const linkIds = linksAmong(nodeIds);
+    renderElements(nodeIds, linkIds);
+    setStatus(
+      name + " — " + nodeIds.size + " activities, " + linkIds.size +
+      " relationships" + (criticalOnly() ? " (critical only)" : "") +
+      (wbsMode ? " · rolled up to WBS groups" : "")
+    );
+  }
+
+  function toggleWbsMode(on) {
+    wbsMode = on;
+    const btn = $("wbsModeBtn");
+    btn.textContent = "WBS mode: " + (wbsMode ? "On" : "Off");
+    btn.classList.toggle("active", wbsMode);
+  }
+
+  function rerenderLastView() {
+    if (lastView.type === "trace" && focusTaskId) renderTrace();
+    else if (lastView.type === "wbs") renderWbsView(lastView.wbsId);
+    else if (lastView.type === "full") renderFullNetwork();
+  }
+
+  // ---------- Details panel ----------
+  function relListHtml(task, links, dir) {
+    if (!links.length) return '<p class="hint">None</p>';
+    const rows = links.map((link) => {
+      const otherId = dir === "up" ? link.predId : link.succId;
+      const other = model.tasks.get(otherId);
+      const crit = isCriticalTask(other) ? " crit" : "";
+      let rel = link.typeLabel;
+      if (link.lagDays) rel += (link.lagDays > 0 ? "+" : "") + fmtDays(link.lagDays);
+      return (
+        '<li class="rel-item' + crit + '" data-task="' + escapeHtml(otherId) + '">' +
+        '<span class="rel-type">' + rel + "</span>" +
+        "<strong>" + escapeHtml(other.code) + "</strong> " +
+        escapeHtml(other.name) + "</li>"
+      );
+    });
+    return "<ul class='rel-list'>" + rows.join("") + "</ul>";
+  }
+
+  function showDetails(taskId) {
+    const t = model.tasks.get(taskId);
+    if (!t) return;
+    const crit = isCriticalTask(t);
+    $("detailsPanel").innerHTML =
+      '<div class="detail-head' + (crit ? " crit" : "") + '">' +
+      "<h3>" + escapeHtml(t.code) + "</h3>" +
+      "<p>" + escapeHtml(t.name) + "</p>" +
+      (crit ? '<span class="badge">CRITICAL</span>' : "") +
+      "</div>" +
+      '<table class="detail-table">' +
+      "<tr><td>Discipline</td><td>" + escapeHtml(t.discipline || "—") + "</td></tr>" +
+      "<tr><td>Type</td><td>" + escapeHtml(t.typeLabel) + "</td></tr>" +
+      "<tr><td>Status</td><td>" + escapeHtml(t.statusLabel) + "</td></tr>" +
+      "<tr><td>Duration</td><td>" + fmtDays(t.durationDays) + "</td></tr>" +
+      "<tr><td>Total float</td><td>" + fmtDays(t.totalFloatDays) + "</td></tr>" +
+      "<tr><td>Start</td><td>" + fmtDate(t.start) + "</td></tr>" +
+      "<tr><td>Finish</td><td>" + fmtDate(t.finish) + "</td></tr>" +
+      "<tr><td>Late start</td><td>" + fmtDate(t.lateStart) + "</td></tr>" +
+      "<tr><td>Late finish</td><td>" + fmtDate(t.lateFinish) + "</td></tr>" +
+      "<tr><td>WBS</td><td>" + escapeHtml(t.wbsPath || "—") + "</td></tr>" +
+      "</table>" +
+      '<button id="focusBtn" class="btn primary full-width">Trace from this activity</button>' +
+      "<h4>Predecessors (" + t.predecessors.length + ")</h4>" +
+      relListHtml(t, t.predecessors, "up") +
+      "<h4>Successors (" + t.successors.length + ")</h4>" +
+      relListHtml(t, t.successors, "down");
+
+    $("focusBtn").addEventListener("click", () => focusOn(taskId));
+    for (const li of $("detailsPanel").querySelectorAll(".rel-item")) {
+      li.addEventListener("click", () => {
+        const id = li.getAttribute("data-task");
+        showDetails(id);
+        const node = cy.getElementById(id);
+        if (node.nonempty()) {
+          cy.animate({ center: { eles: node } }, { duration: 250 });
+          highlightNode(id);
+        }
+      });
+    }
+  }
+
+  function highlightNode(taskId) {
+    cy.nodes().removeClass("selected");
+    const node = cy.getElementById(taskId);
+    if (node.nonempty()) node.addClass("selected");
+  }
+
+  function focusOn(taskId) {
+    focusTaskId = taskId;
+    busy("Tracing…", () => {
+      renderTrace();
+      showDetails(taskId);
+      highlightNode(taskId);
+    });
+  }
+
+  // ---------- Search ----------
+  function runSearch(query) {
+    const box = $("searchResults");
+    if (!model || !query.trim()) {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+    const q = query.trim().toLowerCase();
+
+    // WBS branches (any level) that match go on top, best matches first:
+    // exact name, then names starting with the query, then shortest names
+    let wbsMatches = [];
+    if (wbsTree) {
+      for (const [id, node] of model.wbs) {
+        const name = node.name.toLowerCase();
+        if (name.includes(q) && (wbsTree.subCount.get(id) || 0) > 0) {
+          const rank = name === q ? 0 : name.startsWith(q) ? 1 : 2;
+          wbsMatches.push({ id, name: node.name, count: wbsTree.subCount.get(id), rank });
+        }
+      }
+      wbsMatches.sort((a, b) => a.rank - b.rank || a.name.length - b.name.length);
+      wbsMatches = wbsMatches.slice(0, 8);
+    }
+
+    const matches = [];
+    for (const t of visibleTasks()) {
+      if (
+        t.code.toLowerCase().includes(q) ||
+        t.name.toLowerCase().includes(q) ||
+        (t.wbsPath && t.wbsPath.toLowerCase().includes(q))
+      ) {
+        matches.push(t);
+        if (matches.length >= 50) break;
+      }
+    }
+
+    if (!wbsMatches.length && !matches.length) {
+      box.innerHTML = '<div class="search-empty">No matching activities</div>';
+      box.style.display = "";
+      return;
+    }
+
+    box.innerHTML =
+      wbsMatches
+        .map(
+          (d) =>
+            '<div class="search-item discipline" data-wbs="' +
+            escapeHtml(d.id) + '">' +
+            '<span class="disc-tag">WBS</span><strong>' +
+            escapeHtml(d.name) + "</strong>" +
+            '<span class="search-meta">' + d.count +
+            " activities — show network</span></div>"
+        )
+        .join("") +
+      matches
+        .map(
+          (t) =>
+            '<div class="search-item' + (isCriticalTask(t) ? " crit" : "") +
+            '" data-task="' + escapeHtml(t.id) + '">' +
+            "<strong>" + escapeHtml(t.code) + "</strong> " + escapeHtml(t.name) +
+            '<span class="search-meta">' +
+            escapeHtml(t.wbsName || t.discipline || "") +
+            " · " + fmtDate(t.start) + " · TF " + fmtDays(t.totalFloatDays) +
+            "</span></div>"
+        )
+        .join("");
+    box.style.display = "";
+
+    for (const item of box.querySelectorAll(".search-item")) {
+      item.addEventListener("click", () => {
+        box.style.display = "none";
+        $("searchInput").value = "";
+        const wbsId = item.getAttribute("data-wbs");
+        if (wbsId) {
+          selectWbsRow(wbsId);
+          busy("Drawing…", () => renderWbsView(wbsId));
+        } else {
+          focusOn(item.getAttribute("data-task"));
+        }
+      });
+    }
+  }
+
+  // ---------- Cytoscape setup ----------
+  function initCy() {
+    cy = cytoscape({
+      container: $("graph"),
+      wheelSensitivity: 0.25,
+      style: [
+        {
+          selector: "node",
+          style: {
+            shape: "round-rectangle",
+            width: "data(w)",
+            height: 52,
+            "background-color": "#243447",
+            "border-width": 1.5,
+            "border-color": "#3d5875",
+            label: "data(label)",
+            color: "#dbe7f3",
+            "font-size": 11,
+            "text-wrap": "wrap",
+            "text-max-width": "data(tmw)",
+            "text-valign": "center",
+            "text-halign": "center",
+          },
+        },
+        {
+          selector: "node.wbsnode",
+          style: {
+            height: 58,
+            "background-color": "#1c2d40",
+            "border-color": "#55759a",
+            "border-width": 1.8,
+            "font-size": 10.5,
+          },
+        },
+        {
+          selector: "node.wbs-group",
+          style: {
+            shape: "round-rectangle",
+            "background-color": "#141e2a",
+            "background-opacity": 0.5,
+            "border-width": 1.2,
+            "border-style": "dashed",
+            "border-color": "#4f6c8c",
+            label: "data(label)",
+            "text-valign": "top",
+            "text-halign": "center",
+            "font-size": 12,
+            "font-weight": "bold",
+            color: "#f5b942",
+            "text-wrap": "wrap",
+            "text-max-width": 320,
+            "text-margin-y": -4,
+            padding: "16px",
+          },
+        },
+        {
+          selector: "node.milestone",
+          style: { shape: "diamond", width: 70, height: 70, "text-max-width": 64, "font-size": 9 },
+        },
+        {
+          selector: "node.critical",
+          style: { "background-color": "#4a1420", "border-color": "#e5484d", "border-width": 2 },
+        },
+        { selector: "node.complete", style: { opacity: 0.55 } },
+        {
+          selector: "node.focus",
+          style: { "border-color": "#f5b942", "border-width": 3.5 },
+        },
+        {
+          selector: "node.selected",
+          style: { "overlay-color": "#f5b942", "overlay-opacity": 0.18, "overlay-padding": 6 },
+        },
+        {
+          selector: "edge",
+          style: {
+            width: 1.6,
+            "curve-style": "bezier",
+            "line-color": "#4a6076",
+            "target-arrow-shape": "triangle",
+            "target-arrow-color": "#4a6076",
+            "arrow-scale": 1.1,
+            label: "data(label)",
+            "font-size": 9,
+            color: "#8fa8c0",
+            "text-background-color": "#101923",
+            "text-background-opacity": 0.85,
+            "text-background-padding": 2,
+          },
+        },
+        {
+          selector: "edge.critical-edge",
+          style: { "line-color": "#e5484d", "target-arrow-color": "#e5484d", width: 2.4 },
+        },
+      ],
+    });
+
+    window._cy = cy; // debugging handle
+
+    cy.on("tap", "node", (evt) => {
+      const id = evt.target.id();
+      if (!model) return;
+      if (model.tasks.has(id)) {
+        showDetails(id);
+        highlightNode(id);
+        showTooltip(evt); // context tooltip on click; hides as soon as the mouse moves
+      } else if (id.startsWith("g-")) {
+        // rolled-up WBS node
+        const wbsId = id.slice(2);
+        showGroupDetails(wbsId);
+        highlightNode(id);
+        showGroupTooltip(evt, wbsId);
+      }
+    });
+    cy.on("tap", (evt) => {
+      // click on empty canvas: deselect
+      if (evt.target === cy) {
+        hideTooltip();
+        cy.nodes().removeClass("selected");
+      }
+    });
+    cy.on("dbltap", "node", (evt) => {
+      const id = evt.target.id();
+      if (!model) return;
+      if (model.tasks.has(id)) {
+        focusOn(id);
+      } else if (id.startsWith("g-")) {
+        // drill into this WBS group's own network
+        const wbsId = id.slice(2);
+        selectWbsRow(wbsId);
+        busy("Drawing…", () => renderWbsView(wbsId));
+      }
+    });
+    cy.on("pan zoom", () => {
+      updateRuler();
+      hideTooltip();
+    });
+    window.addEventListener("resize", updateRuler);
+  }
+
+  // ---------- Node tooltip (shown on click, dismissed by mouse movement) ----------
+  let tipAnchor = null; // cursor position when the tooltip was shown
+
+  function tipMouseMove(e) {
+    if (!tipAnchor) return;
+    if (Math.hypot(e.clientX - tipAnchor.x, e.clientY - tipAnchor.y) > 12) {
+      hideTooltip();
+    }
+  }
+
+  function hideTooltip() {
+    $("nodeTooltip").style.display = "none";
+    tipAnchor = null;
+    document.removeEventListener("mousemove", tipMouseMove);
+  }
+
+  function positionTooltip(evt) {
+    const tip = $("nodeTooltip");
+    if (tip.style.display === "none") return;
+    const wrap = $("graphWrap");
+    const pos = evt.renderedPosition || evt.target.renderedPosition();
+    let x = pos.x + 16;
+    let y = pos.y + 16;
+    // keep the tooltip inside the graph area
+    x = Math.min(x, wrap.clientWidth - tip.offsetWidth - 10);
+    y = Math.min(y, wrap.clientHeight - tip.offsetHeight - 10);
+    tip.style.left = Math.max(6, x) + "px";
+    tip.style.top = Math.max(30, y) + "px";
+  }
+
+  function displayTooltip(html, evt) {
+    const tip = $("nodeTooltip");
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    positionTooltip(evt);
+    // dismiss as soon as the mouse moves away from where it was clicked
+    const oe = evt.originalEvent || {};
+    tipAnchor = { x: oe.clientX || 0, y: oe.clientY || 0 };
+    document.addEventListener("mousemove", tipMouseMove);
+  }
+
+  function showTooltip(evt) {
+    const t = model && model.tasks.get(evt.target.id());
+    if (!t) return;
+    displayTooltip(
+      "<strong>" + escapeHtml(t.code) + "</strong> " + escapeHtml(t.name) +
+      '<div class="tip-wbs">' + escapeHtml(t.wbsPath || "—") + "</div>" +
+      '<div class="tip-meta">' + escapeHtml(t.statusLabel) +
+      " · TF " + fmtDays(t.totalFloatDays) +
+      " · " + fmtDate(t.start) + " → " + fmtDate(t.finish) + "</div>",
+      evt
+    );
+  }
+
+  function wbsPathOf(wbsId) {
+    const parts = [];
+    let node = model.wbs.get(wbsId);
+    let guard = 0;
+    while (node && guard++ < 50) {
+      parts.unshift(node.name);
+      node = node.parentId ? model.wbs.get(node.parentId) : null;
+    }
+    return parts.join(" / ");
+  }
+
+  function groupMembers(wbsId) {
+    return visibleTasks()
+      .filter((t) => t.wbsId === wbsId)
+      .sort((a, b) => (a.start || 0) - (b.start || 0));
+  }
+
+  function showGroupTooltip(evt, wbsId) {
+    const members = groupMembers(wbsId);
+    if (!members.length) return;
+    const crit = members.filter(isCriticalTask).length;
+    const starts = members.filter((t) => t.start).map((t) => t.start);
+    const ends = members.filter((t) => t.finish || t.start).map((t) => t.finish || t.start);
+    const min = starts.length ? new Date(Math.min(...starts)) : null;
+    const max = ends.length ? new Date(Math.max(...ends)) : null;
+    displayTooltip(
+      "<strong>" + escapeHtml(model.wbs.get(wbsId).name) + "</strong>" +
+      '<div class="tip-wbs">' + escapeHtml(wbsPathOf(wbsId)) + "</div>" +
+      '<div class="tip-meta">' + members.length + " activities · " + crit +
+      " critical · " + fmtDate(min) + " → " + fmtDate(max) + "</div>",
+      evt
+    );
+  }
+
+  function showGroupDetails(wbsId) {
+    const w = model.wbs.get(wbsId);
+    if (!w) return;
+    const members = groupMembers(wbsId);
+    const crit = members.filter(isCriticalTask).length;
+    const rows = members
+      .map((t) => {
+        const c = isCriticalTask(t) ? " crit" : "";
+        return (
+          '<li class="rel-item' + c + '" data-task="' + escapeHtml(t.id) + '">' +
+          '<span class="rel-type">TF ' + fmtDays(t.totalFloatDays) + "</span>" +
+          "<strong>" + escapeHtml(t.code) + "</strong> " + escapeHtml(t.name) + "</li>"
+        );
+      })
+      .join("");
+    $("detailsPanel").innerHTML =
+      '<div class="detail-head' + (crit ? " crit" : "") + '">' +
+      "<h3>" + escapeHtml(w.name) + "</h3>" +
+      "<p>" + escapeHtml(wbsPathOf(wbsId)) + "</p>" +
+      (crit ? '<span class="badge">' + crit + " CRITICAL</span>" : "") +
+      "</div>" +
+      '<button id="openGroupBtn" class="btn primary full-width">Show activities in this group</button>' +
+      "<h4>Activities (" + members.length + ")</h4>" +
+      "<ul class='rel-list'>" + rows + "</ul>";
+    $("openGroupBtn").addEventListener("click", () => {
+      if (wbsMode) toggleWbsMode(false);
+      selectWbsRow(wbsId);
+      busy("Drawing…", () => renderWbsView(wbsId));
+    });
+    for (const li of $("detailsPanel").querySelectorAll(".rel-item")) {
+      li.addEventListener("click", () => showDetails(li.getAttribute("data-task")));
+    }
+  }
+
+  // ---------- Event wiring ----------
+  function init() {
+    initCy();
+
+    $("fileInput").addEventListener("change", (e) => {
+      if (e.target.files.length) loadFile(e.target.files[0]);
+      e.target.value = "";
+    });
+
+    $("loadSampleBtn").addEventListener("click", () => {
+      if (window.SAMPLE_XER) loadXerText(window.SAMPLE_XER, "Sample_Project.xer");
+    });
+
+    $("searchInput").addEventListener("input", (e) => runSearch(e.target.value));
+    $("searchInput").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") $("searchResults").style.display = "none";
+      if (e.key === "Enter") {
+        const first = $("searchResults").querySelector(".search-item");
+        if (first) first.click();
+      }
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".search-wrap")) $("searchResults").style.display = "none";
+    });
+
+    // Escape anywhere: dismiss tooltip, node highlight and search dropdown
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        hideTooltip();
+        if (cy) cy.nodes().removeClass("selected");
+        $("searchResults").style.display = "none";
+      }
+    });
+
+    for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly", "floatThreshold"]) {
+      $(id).addEventListener("change", () => {
+        if (model && lastView.type) busy("Updating view…", rerenderLastView);
+      });
+    }
+
+    $("wbsModeBtn").addEventListener("click", () => {
+      toggleWbsMode(!wbsMode);
+      if (model && lastView.type) busy("Updating view…", rerenderLastView);
+    });
+
+    $("groupsBtn").addEventListener("click", () => {
+      groupsOn = !groupsOn;
+      const btn = $("groupsBtn");
+      btn.textContent = "Groups: " + (groupsOn ? "On" : "Off");
+      btn.classList.toggle("active", groupsOn);
+      if (model && lastView.type) busy("Updating view…", rerenderLastView);
+    });
+
+    $("durScaleBtn").addEventListener("click", () => {
+      durScale = !durScale;
+      const btn = $("durScaleBtn");
+      btn.textContent = "Duration bars: " + (durScale ? "On" : "Off");
+      btn.classList.toggle("active", durScale);
+      if (model && lastView.type) busy("Updating view…", rerenderLastView);
+    });
+
+    $("projectSelect").addEventListener("change", (e) => {
+      selectedProjId = e.target.value;
+      focusTaskId = null;
+      busy("Updating view…", renderFullNetwork);
+    });
+
+    $("fullNetworkBtn").addEventListener("click", () => {
+      focusTaskId = null;
+      busy("Drawing full network…", renderFullNetwork);
+    });
+    $("fitBtn").addEventListener("click", () => cy.fit(undefined, 40));
+    $("exportBtn").addEventListener("click", () => {
+      if (!cy.nodes().length) return;
+      busy("Exporting PNG…", () => {
+        const png = cy.png({ full: true, scale: 2, bg: "#101923" });
+        const a = document.createElement("a");
+        a.href = png;
+        a.download = "network-diagram.png";
+        a.click();
+      });
+    });
+
+    // Drag & drop anywhere on the page
+    document.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      document.body.classList.add("dragging");
+    });
+    document.addEventListener("dragleave", (e) => {
+      if (e.target === document.body || !e.relatedTarget) {
+        document.body.classList.remove("dragging");
+      }
+    });
+    document.addEventListener("drop", (e) => {
+      e.preventDefault();
+      document.body.classList.remove("dragging");
+      if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();

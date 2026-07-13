@@ -1,0 +1,18 @@
+# --- Real / confidential schedule exports ---
+# Kept on your machine only, never recorded in git history, so they can't be
+# accidentally uploaded if you ever share this project online. The app still
+# reads them straight from the sample/ folder as normal.
+/sample/BSOC*
+*.pdf
+
+# The small synthetic demo schedule (sample/Sample_Project.xer) IS tracked —
+# it contains no real data and is safe to keep in version control.
+
+# --- Machine-specific Claude Code settings ---
+.claude/settings.local.json
+
+# --- OS / editor junk ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+*~

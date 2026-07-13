@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P6 Visualiser — Network Diagram Explorer</title>
+  <!-- ?v= busts the browser cache; bump it when editing css/js -->
+  <link rel="stylesheet" href="css/style.css?v=6">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>P6 <span>Visualiser</span></h1>
+      <button class="btn primary" onclick="document.getElementById('fileInput').click()">Open .xer file</button>
+      <input type="file" id="fileInput" accept=".xer,.XER,.txt" style="display:none">
+      <button class="btn" id="loadSampleBtn">Load sample project</button>
+      <select id="projectSelect" style="display:none"></select>
+      <div class="spacer"></div>
+    </header>
+
+    <div id="statusBar">No schedule loaded — open a Primavera P6 .xer export, drag one onto the page, or load the sample project.</div>
+
+    <aside id="sidebar">
+      <div>
+        <h2 class="section">Find activity</h2>
+        <div class="search-wrap" style="margin-top:8px">
+          <input type="search" id="searchInput" placeholder="Search by ID, name or WBS…" disabled autocomplete="off">
+          <div id="searchResults" style="display:none"></div>
+        </div>
+      </div>
+
+      <div>
+        <h2 class="section">WBS / Disciplines</h2>
+        <div id="wbsTree" class="wbs-tree" style="margin-top:8px">
+          <p class="hint">Load a schedule to browse its WBS.</p>
+        </div>
+      </div>
+
+      <div>
+        <h2 class="section">Trace options</h2>
+        <div class="options" style="margin-top:8px">
+          <label for="layoutSelect">Layout</label>
+          <select id="layoutSelect">
+            <option value="time">Time order (left → right)</option>
+            <option value="logic">Logic flow</option>
+          </select>
+
+          <label for="directionSelect">Direction</label>
+          <select id="directionSelect">
+            <option value="both">Predecessors + successors</option>
+            <option value="pred">Predecessors only</option>
+            <option value="succ">Successors only</option>
+          </select>
+
+          <label for="depthSelect">Depth</label>
+          <select id="depthSelect">
+            <option value="all">Full chain</option>
+            <option value="1">1 level</option>
+            <option value="2">2 levels</option>
+            <option value="3">3 levels</option>
+            <option value="5">5 levels</option>
+            <option value="10">10 levels</option>
+          </select>
+
+          <div class="check-row">
+            <input type="checkbox" id="criticalOnly">
+            <label for="criticalOnly">Critical paths only, float ≤</label>
+            <input type="number" id="floatThreshold" value="0" step="1">
+            <span>days</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h2 class="section">Activity details</h2>
+        <div id="detailsPanel" style="margin-top:8px">
+          <p class="hint">Load a schedule to get started.</p>
+        </div>
+      </div>
+    </aside>
+
+    <div id="graphWrap">
+      <div id="graphToolbar">
+        <button class="btn" id="wbsModeBtn" title="Roll the diagram up to WBS headings: one node per WBS group, edges where logic crosses between groups">WBS mode: Off</button>
+        <button class="btn" id="groupsBtn" title="Draw a labelled box around each WBS group's activities">Groups: Off</button>
+        <button class="btn" id="durScaleBtn" title="Stretch each activity to span its duration on the time axis (time layout only)">Duration bars: Off</button>
+        <button class="btn" id="fullNetworkBtn">Full network</button>
+        <button class="btn" id="fitBtn">Fit view</button>
+        <button class="btn" id="exportBtn">Export PNG</button>
+      </div>
+      <div id="gridlines"></div>
+      <div id="graph"></div>
+      <div id="timeRuler" style="display:none"></div>
+      <div id="nodeTooltip" style="display:none"></div>
+      <div id="spinner" style="display:none">
+        <div class="wheel"></div>
+        <div id="spinnerMsg">Working…</div>
+      </div>
+      <div id="legend">
+        <span><span class="legend-swatch normal"></span>Activity</span>
+        <span><span class="legend-swatch crit"></span>Critical</span>
+        <span><span class="legend-swatch diamond"></span>Milestone</span>
+        <span><span class="legend-swatch focus-ring"></span>Traced activity</span>
+        <span>Double-click a node to re-trace from it</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/vendor/cytoscape.min.js"></script>
+  <script src="js/vendor/dagre.min.js"></script>
+  <script src="js/vendor/cytoscape-dagre.js"></script>
+  <script src="js/sample-data.js?v=6"></script>
+  <script src="js/xer-parser.js?v=6"></script>
+  <script src="js/app.js?v=6"></script>
+</body>
+</html>
