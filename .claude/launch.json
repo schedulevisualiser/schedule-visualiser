@@ -4,7 +4,7 @@
     {
       "name": "p6-visualiser",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8642"],
+      "runtimeArgs": ["tools/serve.py", "8642"],
       "port": 8642
     }
   ]

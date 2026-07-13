@@ -19,6 +19,9 @@
   // WBS groups the user has drilled into: their children (or tasks) are shown
   // instead of the group itself. Drives the top-down drill-down in WBS mode.
   let wbsExpanded = new Set();
+  // set for one render to keep the camera where it is (expand/collapse in
+  // place) instead of re-fitting to the whole diagram
+  let keepViewportOnce = false;
   // what is currently drawn, so option changes can re-render the same view
   let lastView = { type: null, wbsId: null }; // type: full | trace | wbs
 
@@ -678,6 +681,8 @@
     }
 
     hideTooltip();
+    const hadElements = cy.nodes().length > 0;
+    const viewport = { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } };
     cy.startBatch();
     cy.elements().remove();
     cy.add(elements);
@@ -700,7 +705,13 @@
         padding: 30,
       }).run();
     }
-    cy.fit(undefined, 40);
+    if (keepViewportOnce && hadElements) {
+      // expanding/collapsing in place: stay where the user was looking
+      cy.viewport(viewport);
+    } else {
+      cy.fit(undefined, 40);
+    }
+    keepViewportOnce = false;
     updateRuler();
   }
 
@@ -1076,6 +1087,7 @@
       } else if (id.startsWith("g-")) {
         // drill down: expand this group into its next level (or its tasks)
         wbsExpanded.add(id.slice(2));
+        keepViewportOnce = true;
         busy("Expanding…", rerenderLastView);
       }
     });
@@ -1091,6 +1103,7 @@
       }
       if (parentWbs && wbsExpanded.has(parentWbs)) {
         wbsExpanded.delete(parentWbs);
+        keepViewportOnce = true;
         busy("Collapsing…", rerenderLastView);
       }
     });
