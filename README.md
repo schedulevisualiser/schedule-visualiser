@@ -41,12 +41,15 @@ there is no server-side processing, which matters for confidential programmes.
      box around each WBS group's activities, mirroring the heading bands of
      a P6 PDF export.
    - **WBS mode** (toolbar toggle, off by default) — rolls the diagram up to
-     one node per WBS heading: task links crossing between groups merge into
-     single edges (labelled ×N when several), and groups containing critical
-     work are flagged red — showing how the critical path flows across
-     disciplines and work packages. Click a group for its member activities;
-     double-click to drill into its own network. Works with every view and
-     the critical-only filter.
+     WBS headings, starting at level 1 (the disciplines). Task links crossing
+     between groups merge into single edges (labelled ×N when several), and
+     groups containing critical work are flagged red — showing how the
+     critical path flows across disciplines and work packages.
+     **Double-click a group to drill into its next level down** (repeat to
+     reach individual tasks); **right-click to collapse** a branch back up;
+     use the **Level dropdown** to reset the whole diagram to a uniform WBS
+     depth. Click a group for its member activities. Works with every view
+     and the critical-only filter.
    - **Direction** — predecessors, successors, or both
    - **Depth** — full chain or a limited number of levels
    - **Critical paths only** — hide activities with total float above the

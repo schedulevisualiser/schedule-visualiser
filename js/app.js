@@ -15,7 +15,10 @@
   let wbsTree = null;      // { children:Map, subCount:Map, roots:[] }
   let durScale = false;    // stretch nodes to span their duration (time layout)
   let groupsOn = false;    // draw compound boxes around WBS groups
-  let wbsMode = false;     // roll the diagram up to one node per WBS group
+  let wbsMode = false;     // roll the diagram up to WBS groups
+  // WBS groups the user has drilled into: their children (or tasks) are shown
+  // instead of the group itself. Drives the top-down drill-down in WBS mode.
+  let wbsExpanded = new Set();
   // what is currently drawn, so option changes can re-render the same view
   let lastView = { type: null, wbsId: null }; // type: full | trace | wbs
 
@@ -121,6 +124,16 @@
       buildWbsTree();
       buildWbsTreeDom();
 
+      // WBS-mode roll-up level selector (level 1 = disciplines)
+      const lvl = $("wbsLevelSelect");
+      lvl.innerHTML = "";
+      for (let n = 1; n <= Math.min(wbsTree.maxTaskDepth, 9); n++) {
+        lvl.appendChild(new Option("Level " + n, n));
+      }
+      lvl.value = "1";
+      wbsExpanded.clear();
+      if (wbsMode) setUniformWbsLevel(1);
+
       $("searchInput").value = "";
       $("searchInput").disabled = false;
       $("detailsPanel").innerHTML =
@@ -178,7 +191,51 @@
       return c;
     }
     for (const r of roots) calc(r);
-    wbsTree = { children, subCount, roots };
+
+    // depth of every WBS node (root = 0, disciplines = 1, ...) and the
+    // deepest level that directly holds activities
+    const depths = new Map();
+    let maxTaskDepth = 1;
+    const queue = roots.map((r) => [r, 0]);
+    while (queue.length) {
+      const [id, d] = queue.shift();
+      depths.set(id, d);
+      if (directCounts.get(id) && d > maxTaskDepth) maxTaskDepth = d;
+      for (const k of children.get(id) || []) queue.push([k, d + 1]);
+    }
+
+    wbsTree = { children, subCount, roots, depths, maxTaskDepth };
+  }
+
+  /** Expand every group above `level`, so the diagram shows WBS level N. */
+  function setUniformWbsLevel(level) {
+    wbsExpanded.clear();
+    for (const id of model.wbs.keys()) {
+      const d = wbsTree.depths.get(id);
+      if (d >= 1 && d < level && (wbsTree.subCount.get(id) || 0) > 0) {
+        wbsExpanded.add(id);
+      }
+    }
+  }
+
+  /**
+   * The WBS group a task rolls up into, honouring drill-down: walk from the
+   * discipline level towards the task's own WBS; stop at the first group
+   * that hasn't been expanded. Returns null when the task itself should be
+   * shown (its whole chain is expanded).
+   */
+  function groupWbsFor(t) {
+    const chain = [];
+    let node = model.wbs.get(t.wbsId);
+    let guard = 0;
+    while (node && guard++ < 60) {
+      chain.unshift(node);
+      node = node.parentId ? model.wbs.get(node.parentId) : null;
+    }
+    for (let i = 1; i < chain.length; i++) { // chain[0] is the project root
+      if (!wbsExpanded.has(chain[i].id)) return chain[i];
+    }
+    return null;
   }
 
   function wbsDescendants(wbsId) {
@@ -477,15 +534,25 @@
    * boundaries into single edges.
    */
   function aggregateByWbs(nodeIds, linkIds) {
-    const groups = new Map();
+    const groups = new Map();   // wbsId -> group item
+    const taskItems = [];       // tasks shown individually (fully drilled)
+    const entityOf = new Map(); // taskId -> element id it appears as
+
     for (const id of nodeIds) {
       const t = model.tasks.get(id);
-      let g = groups.get(t.wbsId);
+      const gw = groupWbsFor(t);
+      if (!gw) {
+        taskItems.push(t);
+        entityOf.set(id, id);
+        continue;
+      }
+      entityOf.set(id, "g-" + gw.id);
+      let g = groups.get(gw.id);
       if (!g) {
         g = {
-          id: "g-" + t.wbsId,
-          wbsId: t.wbsId,
-          name: t.wbsName || "(unnamed WBS)",
+          id: "g-" + gw.id,
+          wbsId: gw.id,
+          name: gw.name || "(unnamed WBS)",
           discipline: t.discipline,
           count: 0,
           critCount: 0,
@@ -494,7 +561,7 @@
           durationDays: 0,
           isMilestone: false,
         };
-        groups.set(t.wbsId, g);
+        groups.set(gw.id, g);
       }
       g.count++;
       if (isCriticalTask(t)) g.critCount++;
@@ -513,19 +580,22 @@
     const edgeMap = new Map();
     for (const link of model.links) {
       if (!linkIds.has(link.id)) continue;
-      const p = model.tasks.get(link.predId);
-      const s = model.tasks.get(link.succId);
-      if (p.wbsId === s.wbsId) continue; // internal logic stays inside the node
-      const key = p.wbsId + " " + s.wbsId;
+      const pe = entityOf.get(link.predId);
+      const se = entityOf.get(link.succId);
+      if (!pe || !se || pe === se) continue; // internal logic stays inside its node
+      const key = pe + ">" + se;
       let e = edgeMap.get(key);
       if (!e) {
-        e = { predWbs: p.wbsId, succWbs: s.wbsId, count: 0, critical: false };
+        e = { pred: pe, succ: se, count: 0, critical: false, links: [] };
         edgeMap.set(key, e);
       }
       e.count++;
+      e.links.push(link);
+      const p = model.tasks.get(link.predId);
+      const s = model.tasks.get(link.succId);
       if (isCriticalTask(p) && isCriticalTask(s)) e.critical = true;
     }
-    return { items: [...groups.values()], edges: [...edgeMap.values()] };
+    return { groupItems: [...groups.values()], taskItems, edges: [...edgeMap.values()] };
   }
 
   function groupToNode(g, widths) {
@@ -549,11 +619,15 @@
   }
 
   function aggEdgeToElement(e) {
+    // a single task-to-task link keeps its real relationship label (FS+lag etc.)
+    if (e.count === 1 && !e.pred.startsWith("g-") && !e.succ.startsWith("g-")) {
+      return linkToEdge(e.links[0]);
+    }
     return {
       data: {
-        id: "ge-" + e.predWbs + "-" + e.succWbs,
-        source: "g-" + e.predWbs,
-        target: "g-" + e.succWbs,
+        id: "ge-" + e.pred + "-" + e.succ,
+        source: e.pred,
+        target: e.succ,
         label: e.count > 1 ? "×" + e.count : "",
       },
       classes: e.critical ? "critical-edge" : "",
@@ -566,9 +640,13 @@
 
     if (wbsMode) {
       const agg = aggregateByWbs(nodeIds, linkIds);
-      if (layoutMode() === "time") timeLayout = computeTimePositions(agg.items);
-      for (const g of agg.items) {
+      const layoutItems = [...agg.groupItems, ...agg.taskItems];
+      if (layoutMode() === "time") timeLayout = computeTimePositions(layoutItems);
+      for (const g of agg.groupItems) {
         elements.push(groupToNode(g, timeLayout && timeLayout.widths));
+      }
+      for (const t of agg.taskItems) {
+        elements.push(taskToNode(t, timeLayout && timeLayout.widths));
       }
       for (const e of agg.edges) elements.push(aggEdgeToElement(e));
     } else {
@@ -698,6 +776,10 @@
     const btn = $("wbsModeBtn");
     btn.textContent = "WBS mode: " + (wbsMode ? "On" : "Off");
     btn.classList.toggle("active", wbsMode);
+    $("wbsLevelSelect").style.display = wbsMode ? "" : "none";
+    if (wbsMode && model) {
+      setUniformWbsLevel(parseInt($("wbsLevelSelect").value, 10) || 1);
+    }
   }
 
   function rerenderLastView() {
@@ -992,10 +1074,24 @@
       if (model.tasks.has(id)) {
         focusOn(id);
       } else if (id.startsWith("g-")) {
-        // drill into this WBS group's own network
-        const wbsId = id.slice(2);
-        selectWbsRow(wbsId);
-        busy("Drawing…", () => renderWbsView(wbsId));
+        // drill down: expand this group into its next level (or its tasks)
+        wbsExpanded.add(id.slice(2));
+        busy("Expanding…", rerenderLastView);
+      }
+    });
+    cy.on("cxttap", "node", (evt) => {
+      // right-click: collapse this branch back up one level
+      if (!model || !wbsMode) return;
+      const id = evt.target.id();
+      let parentWbs = null;
+      if (id.startsWith("g-")) {
+        parentWbs = (model.wbs.get(id.slice(2)) || {}).parentId;
+      } else if (model.tasks.has(id)) {
+        parentWbs = model.tasks.get(id).wbsId;
+      }
+      if (parentWbs && wbsExpanded.has(parentWbs)) {
+        wbsExpanded.delete(parentWbs);
+        busy("Collapsing…", rerenderLastView);
       }
     });
     cy.on("pan zoom", () => {
@@ -1071,8 +1167,9 @@
   }
 
   function groupMembers(wbsId) {
+    const inSubtree = wbsDescendants(wbsId);
     return visibleTasks()
-      .filter((t) => t.wbsId === wbsId)
+      .filter((t) => inSubtree.has(t.wbsId))
       .sort((a, b) => (a.start || 0) - (b.start || 0));
   }
 
@@ -1099,6 +1196,7 @@
     const members = groupMembers(wbsId);
     const crit = members.filter(isCriticalTask).length;
     const rows = members
+      .slice(0, 100)
       .map((t) => {
         const c = isCriticalTask(t) ? " crit" : "";
         return (
@@ -1115,7 +1213,8 @@
       (crit ? '<span class="badge">' + crit + " CRITICAL</span>" : "") +
       "</div>" +
       '<button id="openGroupBtn" class="btn primary full-width">Show activities in this group</button>' +
-      "<h4>Activities (" + members.length + ")</h4>" +
+      "<h4>Activities (" + members.length + ")" +
+      (members.length > 100 ? " — first 100 shown" : "") + "</h4>" +
       "<ul class='rel-list'>" + rows + "</ul>";
     $("openGroupBtn").addEventListener("click", () => {
       if (wbsMode) toggleWbsMode(false);
@@ -1170,6 +1269,12 @@
     $("wbsModeBtn").addEventListener("click", () => {
       toggleWbsMode(!wbsMode);
       if (model && lastView.type) busy("Updating view…", rerenderLastView);
+    });
+
+    $("wbsLevelSelect").addEventListener("change", (e) => {
+      if (!model) return;
+      setUniformWbsLevel(parseInt(e.target.value, 10) || 1);
+      if (wbsMode && lastView.type) busy("Updating view…", rerenderLastView);
     });
 
     $("groupsBtn").addEventListener("click", () => {
