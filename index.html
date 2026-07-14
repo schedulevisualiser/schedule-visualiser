@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
   <div id="app">
@@ -68,6 +68,16 @@
             <input type="number" id="floatThreshold" value="0" step="1">
             <span>days</span>
           </div>
+
+          <div class="check-row">
+            <input type="checkbox" id="excludeMilestones">
+            <label for="excludeMilestones" title="Hide milestones; their predecessors connect straight to their successors (dashed edges) so chains stay intact">Exclude milestones</label>
+          </div>
+
+          <div class="check-row">
+            <input type="checkbox" id="fullTimeline">
+            <label for="fullTimeline" title="Anchor the time axis to the whole schedule (project start to finish) instead of just the dates of what is displayed">Timeline from project start</label>
+          </div>
         </div>
       </div>
 
@@ -110,8 +120,8 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=10"></script>
-  <script src="js/xer-parser.js?v=10"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/sample-data.js?v=12"></script>
+  <script src="js/xer-parser.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
 </body>
 </html>

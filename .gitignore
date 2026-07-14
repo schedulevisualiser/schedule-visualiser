@@ -2,11 +2,11 @@
 # Kept on your machine only, never recorded in git history, so they can't be
 # accidentally uploaded if you ever share this project online. The app still
 # reads them straight from the sample/ folder as normal.
-/sample/BSOC*
+# Rule: NO .xer in sample/ is tracked except the synthetic demo file, which
+# contains no real data.
+/sample/*.xer
+!/sample/Sample_Project.xer
 *.pdf
-
-# The small synthetic demo schedule (sample/Sample_Project.xer) IS tracked —
-# it contains no real data and is safe to keep in version control.
 
 # --- Machine-specific Claude Code settings ---
 .claude/settings.local.json

@@ -56,6 +56,17 @@ there is no server-side processing, which matters for confidential programmes.
      threshold (default 0 days). This filter also applies to discipline and
      full-network views, so you can see e.g. "the critical activities within
      Environmental".
+   - **Exclude milestones** — hides milestone diamonds but *bridges* their
+     logic: each milestone's predecessors connect straight to its successors
+     with dashed edges, so chains never break apart.
+   - **Timeline from project start** — anchors the time axis to the whole
+     schedule's date range instead of just what is displayed (pan left to
+     see the early months when viewing future work).
+   - With **Duration bars** on, relationship arrows attach at the time-true
+     point on each bar: FS leaves the predecessor's finish and lands on the
+     successor's start, SS start-to-start, FF finish-to-finish.
+   - The WBS-mode level dropdown ends with **"All tasks (no grouping)"**,
+     which fully ungroups the view down to individual activities.
 4. **Click any node** for a tooltip with its full WBS breadcrumb, status,
    float and dates (it dismisses as soon as the mouse moves) — essential
    context when many activities share generic names (e.g. several "Client

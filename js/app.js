@@ -42,6 +42,7 @@
   const NEUTRAL_SERIES = "#64748b"; // disciplines beyond the palette
   const CRITICAL_RED = "#d03b3b";   // status red - reserved, never a discipline
   let disciplineColour = new Map(); // discipline name -> base hex
+  let modelDateRange = null;        // { min, max } epoch-ms over the whole schedule
 
   function assignDisciplineColours() {
     disciplineColour = new Map();
@@ -116,6 +117,85 @@
     return $("criticalOnly").checked;
   }
 
+  function excludeMilestones() {
+    return $("excludeMilestones").checked;
+  }
+
+  /**
+   * "Exclude milestones" filter: drop milestone nodes from the view, but
+   * bridge their logic so chains stay intact - each milestone's predecessors
+   * connect straight through to its successors (shown as dashed edges).
+   * Runs of consecutive milestones are bridged transitively. The traced
+   * (focus) activity is never dropped, even if it is a milestone.
+   * Returns { nodeIds, linkIds, bridges:[{predId,succId,critical}] }.
+   */
+  function applyMilestoneFilter(nodeIds, linkIds) {
+    if (!excludeMilestones()) return { nodeIds, linkIds, bridges: [] };
+    const dropped = (id) => {
+      const t = model.tasks.get(id);
+      return t.isMilestone && id !== focusTaskId;
+    };
+    if (![...nodeIds].some(dropped)) return { nodeIds, linkIds, bridges: [] };
+
+    const keep = new Set([...nodeIds].filter((id) => !dropped(id)));
+
+    // adjacency restricted to the links in this view
+    const outAdj = new Map();
+    const keptLinkIds = new Set();
+    const directPairs = new Set();
+    for (const link of model.links) {
+      if (!linkIds.has(link.id)) continue;
+      if (!outAdj.has(link.predId)) outAdj.set(link.predId, []);
+      outAdj.get(link.predId).push(link.succId);
+      if (keep.has(link.predId) && keep.has(link.succId)) {
+        keptLinkIds.add(link.id);
+        directPairs.add(link.predId + ">" + link.succId);
+      }
+    }
+
+    // from each kept node, walk through dropped-milestone chains to find the
+    // kept nodes they eventually lead to
+    const bridges = [];
+    const seenPair = new Set();
+    for (const a of keep) {
+      const firstHops = (outAdj.get(a) || []).filter((id) => nodeIds.has(id) && dropped(id));
+      if (!firstHops.length) continue;
+      const visited = new Set();
+      const stack = firstHops.map((id) => ({
+        id,
+        allCrit: isCriticalTask(model.tasks.get(id)),
+      }));
+      while (stack.length) {
+        const cur = stack.pop();
+        if (visited.has(cur.id)) continue;
+        visited.add(cur.id);
+        for (const nxt of outAdj.get(cur.id) || []) {
+          if (!nodeIds.has(nxt)) continue;
+          if (dropped(nxt)) {
+            stack.push({
+              id: nxt,
+              allCrit: cur.allCrit && isCriticalTask(model.tasks.get(nxt)),
+            });
+          } else if (keep.has(nxt) && nxt !== a) {
+            const pair = a + ">" + nxt;
+            if (!seenPair.has(pair) && !directPairs.has(pair)) {
+              seenPair.add(pair);
+              bridges.push({
+                predId: a,
+                succId: nxt,
+                critical:
+                  cur.allCrit &&
+                  isCriticalTask(model.tasks.get(a)) &&
+                  isCriticalTask(model.tasks.get(nxt)),
+              });
+            }
+          }
+        }
+      }
+    }
+    return { nodeIds: keep, linkIds: keptLinkIds, bridges };
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -177,6 +257,8 @@
       depth: $("depthSelect").value,
       criticalOnly: $("criticalOnly").checked,
       floatThreshold: $("floatThreshold").value,
+      excludeMs: $("excludeMilestones").checked,
+      fullTimeline: $("fullTimeline").checked,
       viewport: cy ? { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } } : null,
     };
   }
@@ -216,6 +298,8 @@
     $("depthSelect").value = s.depth;
     $("criticalOnly").checked = s.criticalOnly;
     $("floatThreshold").value = s.floatThreshold;
+    $("excludeMilestones").checked = !!s.excludeMs;
+    $("fullTimeline").checked = !!s.fullTimeline;
     selectedProjId = s.selectedProjId;
     if ($("projectSelect").options.length) $("projectSelect").value = s.selectedProjId;
     $("wbsLevelSelect").value = s.wbsLevel;
@@ -291,12 +375,26 @@
       assignDisciplineColours();
       buildLegend();
 
+      // full-schedule date range, for the "Timeline from project start" option
+      modelDateRange = null;
+      for (const t of model.tasks.values()) {
+        if (!t.start) continue;
+        const s = t.start.getTime();
+        const f = (t.finish || t.start).getTime();
+        if (!modelDateRange) modelDateRange = { min: s, max: f };
+        else {
+          if (s < modelDateRange.min) modelDateRange.min = s;
+          if (f > modelDateRange.max) modelDateRange.max = f;
+        }
+      }
+
       // WBS-mode roll-up level selector (level 1 = disciplines)
       const lvl = $("wbsLevelSelect");
       lvl.innerHTML = "";
       for (let n = 1; n <= Math.min(wbsTree.maxTaskDepth, 9); n++) {
         lvl.appendChild(new Option("Level " + n, n));
       }
+      lvl.appendChild(new Option("All tasks (no grouping)", 99));
       lvl.value = "1";
       wbsExpanded.clear();
       if (wbsMode) setUniformWbsLevel(1);
@@ -560,7 +658,31 @@
     return { data, classes: classes.join(" ") };
   }
 
-  function linkToEdge(link) {
+  /**
+   * With duration bars on (time layout), anchor each relationship to the
+   * time-true point on the bar: FS leaves the predecessor's finish (right
+   * end) and lands on the successor's start (left end), SS start->start,
+   * FF finish->finish, SF start->finish. Offsets are px from node centre.
+   */
+  function timeEndpointStyle(typeLabel, predId, succId, widths) {
+    if (!widths) return null;
+    const halfW = (id) => {
+      const t = model.tasks.get(id);
+      if (!t) return NODE_W / 2;
+      if (t.isMilestone) return 35;
+      return (widths[id] || NODE_W) / 2;
+    };
+    const wp = halfW(predId);
+    const ws = halfW(succId);
+    const srcAtFinish = typeLabel === "FS" || typeLabel === "FF";
+    const tgtAtFinish = typeLabel === "FF" || typeLabel === "SF";
+    return {
+      "source-endpoint": (srcAtFinish ? wp : -wp) + " 0",
+      "target-endpoint": (tgtAtFinish ? ws : -ws) + " 0",
+    };
+  }
+
+  function linkToEdge(link, widths) {
     const pred = model.tasks.get(link.predId);
     const succ = model.tasks.get(link.succId);
     let label = "";
@@ -570,10 +692,28 @@
     }
     const classes = [];
     if (isCriticalTask(pred) && isCriticalTask(succ)) classes.push("critical-edge");
-    return {
+    const el = {
       data: { id: "e" + link.id, source: link.predId, target: link.succId, label },
       classes: classes.join(" "),
     };
+    const ep = timeEndpointStyle(link.typeLabel, link.predId, link.succId, widths);
+    if (ep) el.style = ep;
+    return el;
+  }
+
+  function bridgeToEdge(b, widths) {
+    const el = {
+      data: {
+        id: "br" + b.predId + ">" + b.succId,
+        source: b.predId,
+        target: b.succId,
+        label: "",
+      },
+      classes: "bridge" + (b.critical ? " critical-edge" : ""),
+    };
+    const ep = timeEndpointStyle("FS", b.predId, b.succId, widths);
+    if (ep) el.style = ep;
+    return el;
   }
 
   // ---------- Time-scaled layout ----------
@@ -599,8 +739,13 @@
     const dated = tasks.filter((t) => t.start);
     if (!dated.length) return null;
 
-    const min = Math.min(...dated.map((t) => t.start.getTime()));
-    const max = Math.max(...dated.map((t) => (t.finish || t.start).getTime()));
+    let min = Math.min(...dated.map((t) => t.start.getTime()));
+    let max = Math.max(...dated.map((t) => (t.finish || t.start).getTime()));
+    if ($("fullTimeline").checked && modelDateRange) {
+      // anchor the axis to the whole schedule, not just what is displayed
+      min = Math.min(min, modelDateRange.min);
+      max = Math.max(max, modelDateRange.max);
+    }
     const days = Math.max(1, (max - min) / 86400000);
     // sensible default density, clamped so tiny/huge schedules stay usable
     let pxPerDay = 8;
@@ -705,7 +850,7 @@
    * counts and criticality, and merge task links that cross group
    * boundaries into single edges.
    */
-  function aggregateByWbs(nodeIds, linkIds) {
+  function aggregateByWbs(nodeIds, linkIds, bridges) {
     const groups = new Map();   // wbsId -> group item
     const taskItems = [];       // tasks shown individually (fully drilled)
     const entityOf = new Map(); // taskId -> element id it appears as
@@ -767,6 +912,20 @@
       const s = model.tasks.get(link.succId);
       if (isCriticalTask(p) && isCriticalTask(s)) e.critical = true;
     }
+    // milestone-bridge connections merge into the same entity edges
+    for (const b of bridges || []) {
+      const pe = entityOf.get(b.predId);
+      const se = entityOf.get(b.succId);
+      if (!pe || !se || pe === se) continue;
+      const key = pe + ">" + se;
+      let e = edgeMap.get(key);
+      if (!e) {
+        e = { pred: pe, succ: se, count: 0, critical: false, links: [] };
+        edgeMap.set(key, e);
+      }
+      e.count++;
+      if (b.critical) e.critical = true;
+    }
     return { groupItems: [...groups.values()], taskItems, edges: [...edgeMap.values()] };
   }
 
@@ -794,11 +953,17 @@
     };
   }
 
-  function aggEdgeToElement(e) {
+  function aggEdgeToElement(e, widths) {
     // a single task-to-task link keeps its real relationship label (FS+lag etc.)
-    if (e.count === 1 && !e.pred.startsWith("g-") && !e.succ.startsWith("g-")) {
-      return linkToEdge(e.links[0]);
+    if (
+      e.count === 1 && e.links.length === 1 &&
+      !e.pred.startsWith("g-") && !e.succ.startsWith("g-")
+    ) {
+      return linkToEdge(e.links[0], widths);
     }
+    const classes = [];
+    if (e.critical) classes.push("critical-edge");
+    if (e.links.length === 0) classes.push("bridge"); // milestone bridges only
     return {
       data: {
         id: "ge-" + e.pred + "-" + e.succ,
@@ -806,7 +971,7 @@
         target: e.succ,
         label: e.count > 1 ? "×" + e.count : "",
       },
-      classes: e.critical ? "critical-edge" : "",
+      classes: classes.join(" "),
     };
   }
 
@@ -814,8 +979,14 @@
     const elements = [];
     let timeLayout = null;
 
+    // milestone filter applies to every view; bridges keep the logic joined
+    const filtered = applyMilestoneFilter(nodeIds, linkIds);
+    nodeIds = filtered.nodeIds;
+    linkIds = filtered.linkIds;
+    const bridges = filtered.bridges;
+
     if (wbsMode) {
-      const agg = aggregateByWbs(nodeIds, linkIds);
+      const agg = aggregateByWbs(nodeIds, linkIds, bridges);
       const layoutItems = [...agg.groupItems, ...agg.taskItems];
       if (layoutMode() === "time") timeLayout = computeTimePositions(layoutItems);
       for (const g of agg.groupItems) {
@@ -824,7 +995,9 @@
       for (const t of agg.taskItems) {
         elements.push(taskToNode(t, timeLayout && timeLayout.widths));
       }
-      for (const e of agg.edges) elements.push(aggEdgeToElement(e));
+      for (const e of agg.edges) {
+        elements.push(aggEdgeToElement(e, timeLayout && timeLayout.widths));
+      }
     } else {
       const tasks = [...nodeIds].map((id) => model.tasks.get(id));
       if (layoutMode() === "time") timeLayout = computeTimePositions(tasks);
@@ -851,7 +1024,12 @@
         elements.push(taskToNode(t, timeLayout && timeLayout.widths));
       }
       for (const link of model.links) {
-        if (linkIds.has(link.id)) elements.push(linkToEdge(link));
+        if (linkIds.has(link.id)) {
+          elements.push(linkToEdge(link, timeLayout && timeLayout.widths));
+        }
+      }
+      for (const b of bridges) {
+        elements.push(bridgeToEdge(b, timeLayout && timeLayout.widths));
       }
     }
 
@@ -1246,6 +1424,10 @@
           },
         },
         {
+          selector: "edge.bridge",
+          style: { "line-style": "dashed" },
+        },
+        {
           selector: "edge.critical-edge",
           style: { "line-color": CRITICAL_RED, "target-arrow-color": CRITICAL_RED, width: 2.4 },
         },
@@ -1486,7 +1668,8 @@
 
     $("undoBtn").addEventListener("click", undo);
 
-    for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly", "floatThreshold"]) {
+    for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
+                      "floatThreshold", "excludeMilestones", "fullTimeline"]) {
       $(id).addEventListener("change", () => {
         if (!model) return;
         pushUndo();
