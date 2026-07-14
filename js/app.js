@@ -14,7 +14,6 @@
   let selectedProjId = ""; // "" = all projects
   let wbsTree = null;      // { children:Map, subCount:Map, roots:[] }
   let durScale = false;    // stretch nodes to span their duration (time layout)
-  let groupsOn = false;    // draw compound boxes around WBS groups
   let wbsMode = false;     // roll the diagram up to WBS groups
   // WBS groups the user has drilled into: their children (or tasks) are shown
   // instead of the group itself. Drives the top-down drill-down in WBS mode.
@@ -42,7 +41,6 @@
   const NEUTRAL_SERIES = "#64748b"; // disciplines beyond the palette
   const CRITICAL_RED = "#d03b3b";   // status red - reserved, never a discipline
   let disciplineColour = new Map(); // discipline name -> base hex
-  let modelDateRange = null;        // { min, max } epoch-ms over the whole schedule
 
   function assignDisciplineColours() {
     disciplineColour = new Map();
@@ -251,14 +249,12 @@
       wbsExpanded: [...wbsExpanded],
       wbsLevel: $("wbsLevelSelect").value,
       durScale,
-      groupsOn,
       layout: $("layoutSelect").value,
       direction: $("directionSelect").value,
       depth: $("depthSelect").value,
       criticalOnly: $("criticalOnly").checked,
       floatThreshold: $("floatThreshold").value,
       excludeMs: $("excludeMilestones").checked,
-      fullTimeline: $("fullTimeline").checked,
       viewport: cy ? { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } } : null,
     };
   }
@@ -299,7 +295,6 @@
     $("criticalOnly").checked = s.criticalOnly;
     $("floatThreshold").value = s.floatThreshold;
     $("excludeMilestones").checked = !!s.excludeMs;
-    $("fullTimeline").checked = !!s.fullTimeline;
     selectedProjId = s.selectedProjId;
     if ($("projectSelect").options.length) $("projectSelect").value = s.selectedProjId;
     $("wbsLevelSelect").value = s.wbsLevel;
@@ -308,9 +303,6 @@
     durScale = s.durScale;
     $("durScaleBtn").textContent = "Duration bars: " + (durScale ? "On" : "Off");
     $("durScaleBtn").classList.toggle("active", durScale);
-    groupsOn = s.groupsOn;
-    $("groupsBtn").textContent = "Groups: " + (groupsOn ? "On" : "Off");
-    $("groupsBtn").classList.toggle("active", groupsOn);
     focusTaskId = s.focusTaskId;
     lastView = { ...s.lastView };
 
@@ -375,19 +367,6 @@
       assignDisciplineColours();
       buildLegend();
 
-      // full-schedule date range, for the "Timeline from project start" option
-      modelDateRange = null;
-      for (const t of model.tasks.values()) {
-        if (!t.start) continue;
-        const s = t.start.getTime();
-        const f = (t.finish || t.start).getTime();
-        if (!modelDateRange) modelDateRange = { min: s, max: f };
-        else {
-          if (s < modelDateRange.min) modelDateRange.min = s;
-          if (f > modelDateRange.max) modelDateRange.max = f;
-        }
-      }
-
       // WBS-mode roll-up level selector (level 1 = disciplines)
       const lvl = $("wbsLevelSelect");
       lvl.innerHTML = "";
@@ -404,16 +383,12 @@
       $("detailsPanel").innerHTML =
         '<p class="hint">Search for an activity above, or click a node in the diagram.</p>';
 
-      // Small schedules: show the whole network straight away.
-      if (nTasks <= 400) {
-        renderFullNetwork();
-      } else {
-        if (cy) cy.elements().remove();
-        setStatus(
-          fileName + " loaded (" + nTasks +
-          " activities). Pick a WBS branch, search for an activity, or use 'Full network'."
-        );
-      }
+      // Default view: whole schedule rolled up to WBS level 1 (disciplines),
+      // in time order - a readable overview no matter the schedule size.
+      $("layoutSelect").value = "time";
+      $("wbsLevelSelect").value = "1";
+      toggleWbsMode(true);
+      renderFullNetwork();
     });
   }
 
@@ -654,7 +629,6 @@
       id: task.id, label, w, tmw: Math.max(w - 15, 90),
       bg: col.bg, bd: col.bd,
     };
-    if (groupsOn && !wbsMode) data.parent = "wbs-" + task.wbsId;
     return { data, classes: classes.join(" ") };
   }
 
@@ -739,13 +713,8 @@
     const dated = tasks.filter((t) => t.start);
     if (!dated.length) return null;
 
-    let min = Math.min(...dated.map((t) => t.start.getTime()));
-    let max = Math.max(...dated.map((t) => (t.finish || t.start).getTime()));
-    if ($("fullTimeline").checked && modelDateRange) {
-      // anchor the axis to the whole schedule, not just what is displayed
-      min = Math.min(min, modelDateRange.min);
-      max = Math.max(max, modelDateRange.max);
-    }
+    const min = Math.min(...dated.map((t) => t.start.getTime()));
+    const max = Math.max(...dated.map((t) => (t.finish || t.start).getTime()));
     const days = Math.max(1, (max - min) / 86400000);
     // sensible default density, clamped so tiny/huge schedules stay usable
     let pxPerDay = 8;
@@ -840,6 +809,17 @@
         lines += '<div class="gridline" style="left:' + x + 'px"></div>';
       }
       d.setMonth(d.getMonth() + 1);
+    }
+    // data-date line: where the schedule was last statused
+    if (model && model.dataDate) {
+      const x =
+        ((model.dataDate.getTime() - timeScale.min) / 86400000) *
+          timeScale.pxPerDay * zoom + panX;
+      if (x >= -60 && x <= width + 60) {
+        ticks += '<div class="dd-label" style="left:' + x + 'px">Data date ' +
+          fmtDate(model.dataDate) + "</div>";
+        lines += '<div class="dd-line" style="left:' + x + 'px"></div>';
+      }
     }
     ruler.innerHTML = ticks;
     grid.innerHTML = lines;
@@ -1001,25 +981,6 @@
     } else {
       const tasks = [...nodeIds].map((id) => model.tasks.get(id));
       if (layoutMode() === "time") timeLayout = computeTimePositions(tasks);
-      if (groupsOn) {
-        // one compound box per WBS group present in the view
-        const groupIds = new Set();
-        for (const t of tasks) groupIds.add(t.wbsId);
-        for (const wbsId of groupIds) {
-          const w = model.wbs.get(wbsId);
-          elements.push({
-            data: {
-              id: "wbs-" + wbsId,
-              label: (w && w.name) || "",
-              w: NODE_W,
-              tmw: 300,
-              bg: "#f1f1ee",
-              bd: "#b9c4cd",
-            },
-            classes: "wbs-group",
-          });
-        }
-      }
       for (const t of tasks) {
         elements.push(taskToNode(t, timeLayout && timeLayout.widths));
       }
@@ -1123,7 +1084,7 @@
     lastView = { type: "full", discipline: null };
     let tasks = visibleTasks();
     if (criticalOnly()) tasks = tasks.filter(isCriticalTask);
-    if (tasks.length > 2500) {
+    if (!wbsMode && tasks.length > 2500) {
       if (!confirm(
         "This will draw " + tasks.length +
         " activities, which may take a while. Continue?"
@@ -1366,27 +1327,6 @@
             height: 58,
             "border-width": 2.2,
             "font-size": 10.5,
-          },
-        },
-        {
-          selector: "node.wbs-group",
-          style: {
-            shape: "round-rectangle",
-            "background-color": "#0b0b0b",
-            "background-opacity": 0.03,
-            "border-width": 1.2,
-            "border-style": "dashed",
-            "border-color": "#b9c4cd",
-            label: "data(label)",
-            "text-valign": "top",
-            "text-halign": "center",
-            "font-size": 12,
-            "font-weight": "bold",
-            color: "#52514e",
-            "text-wrap": "wrap",
-            "text-max-width": 320,
-            "text-margin-y": -4,
-            padding: "16px",
           },
         },
         {
@@ -1669,7 +1609,7 @@
     $("undoBtn").addEventListener("click", undo);
 
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
-                      "floatThreshold", "excludeMilestones", "fullTimeline"]) {
+                      "floatThreshold", "excludeMilestones"]) {
       $(id).addEventListener("change", () => {
         if (!model) return;
         pushUndo();
@@ -1689,16 +1629,6 @@
       pushUndo();
       setUniformWbsLevel(parseInt(e.target.value, 10) || 1);
       if (wbsMode && lastView.type) busy("Updating view…", rerenderLastView);
-      else commitState();
-    });
-
-    $("groupsBtn").addEventListener("click", () => {
-      pushUndo();
-      groupsOn = !groupsOn;
-      const btn = $("groupsBtn");
-      btn.textContent = "Groups: " + (groupsOn ? "On" : "Off");
-      btn.classList.toggle("active", groupsOn);
-      if (model && lastView.type) busy("Updating view…", rerenderLastView);
       else commitState();
     });
 
@@ -1724,19 +1654,10 @@
       if (!model) return;
       pushUndo();
       focusTaskId = null;
+      toggleWbsMode(false); // full network = every activity, no WBS grouping
       busy("Drawing full network…", renderFullNetwork);
     });
     $("fitBtn").addEventListener("click", () => cy.fit(undefined, 40));
-    $("exportBtn").addEventListener("click", () => {
-      if (!cy.nodes().length) return;
-      busy("Exporting PNG…", () => {
-        const png = cy.png({ full: true, scale: 2, bg: "#fcfcfb" });
-        const a = document.createElement("a");
-        a.href = png;
-        a.download = "network-diagram.png";
-        a.click();
-      });
-    });
 
     // Drag & drop anywhere on the page
     document.addEventListener("dragover", (e) => {

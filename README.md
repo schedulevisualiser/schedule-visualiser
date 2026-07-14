@@ -37,10 +37,8 @@ there is no server-side processing, which matters for confidential programmes.
    - **Duration bars** (toolbar toggle, off by default) — stretches each
      activity box to span its duration on the time axis, Gantt-style. Long
      activities become long bars, so leave it off if that clutters the view.
-   - **Groups** (toolbar toggle, off by default) — draws a labelled dashed
-     box around each WBS group's activities, mirroring the heading bands of
-     a P6 PDF export.
-   - **WBS mode** (toolbar toggle, off by default) — rolls the diagram up to
+   - **WBS mode** (toolbar toggle, ON by default when a file loads) — rolls
+     the diagram up to
      WBS headings, starting at level 1 (the disciplines). Task links crossing
      between groups merge into single edges (labelled ×N when several), and
      groups containing critical work are flagged red — showing how the
@@ -59,9 +57,8 @@ there is no server-side processing, which matters for confidential programmes.
    - **Exclude milestones** — hides milestone diamonds but *bridges* their
      logic: each milestone's predecessors connect straight to its successors
      with dashed edges, so chains never break apart.
-   - **Timeline from project start** — anchors the time axis to the whole
-     schedule's date range instead of just what is displayed (pan left to
-     see the early months when viewing future work).
+   - In time layouts, a dashed blue **data-date line** marks where the
+     schedule was last statused.
    - With **Duration bars** on, relationship arrows attach at the time-true
      point on each bar: FS leaves the predecessor's finish and lands on the
      successor's start, SS start-to-start, FF finish-to-finish.
@@ -83,10 +80,10 @@ there is no server-side processing, which matters for confidential programmes.
    through your last 50 changes — traces, drill-downs, filters, layout and
    mode toggles — restoring the camera position along with the view. The
    history resets when you load a new file.
-8. **Export PNG** saves the current diagram as an image.
 
-Schedules with ≤ 400 activities draw in full on load; larger ones start in
-search-and-trace mode (you can still force **Full network**).
+Every schedule opens as a **WBS level-1 overview in time order** — one
+coloured balloon per discipline. Drill in from there, or press
+**Full network** to see every individual activity with no grouping.
 
 ## How it works
 

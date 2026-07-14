@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=12">
+  <link rel="stylesheet" href="css/style.css?v=13">
 </head>
 <body>
   <div id="app">
@@ -74,10 +74,6 @@
             <label for="excludeMilestones" title="Hide milestones; their predecessors connect straight to their successors (dashed edges) so chains stay intact">Exclude milestones</label>
           </div>
 
-          <div class="check-row">
-            <input type="checkbox" id="fullTimeline">
-            <label for="fullTimeline" title="Anchor the time axis to the whole schedule (project start to finish) instead of just the dates of what is displayed">Timeline from project start</label>
-          </div>
         </div>
       </div>
 
@@ -94,11 +90,9 @@
         <button class="btn" id="undoBtn" title="Undo the last change to the view (Ctrl+Z)" disabled>↩ Undo</button>
         <button class="btn" id="wbsModeBtn" title="Roll the diagram up to WBS headings: one node per WBS group, edges where logic crosses between groups. Double-click a group to expand it; right-click to collapse.">WBS mode: Off</button>
         <select id="wbsLevelSelect" title="Roll-up depth: reset every group to this WBS level" style="display:none"></select>
-        <button class="btn" id="groupsBtn" title="Draw a labelled box around each WBS group's activities">Groups: Off</button>
         <button class="btn" id="durScaleBtn" title="Stretch each activity to span its duration on the time axis (time layout only)">Duration bars: Off</button>
-        <button class="btn" id="fullNetworkBtn">Full network</button>
+        <button class="btn" id="fullNetworkBtn" title="Show every activity in the schedule, no WBS grouping">Full network</button>
         <button class="btn" id="fitBtn">Fit view</button>
-        <button class="btn" id="exportBtn">Export PNG</button>
       </div>
       <div id="gridlines"></div>
       <div id="graph"></div>
@@ -120,8 +114,8 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=12"></script>
-  <script src="js/xer-parser.js?v=12"></script>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/sample-data.js?v=13"></script>
+  <script src="js/xer-parser.js?v=13"></script>
+  <script src="js/app.js?v=13"></script>
 </body>
 </html>

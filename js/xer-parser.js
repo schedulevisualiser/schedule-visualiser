@@ -93,7 +93,10 @@
     const projects = (tables.PROJECT || []).map((row) => ({
       id: row.proj_id,
       name: row.proj_short_name || row.proj_id,
+      lastRecalc: parseDate(row.last_recalc_date),
     }));
+    // schedule data date = when the programme was last statused/recalculated
+    const dataDate = (projects.find((p) => p.lastRecalc) || {}).lastRecalc || null;
 
     const wbs = new Map();
     for (const row of tables.PROJWBS || []) {
@@ -225,7 +228,7 @@
       if (!seen.has(name)) disciplines.push({ name, count });
     }
 
-    return { projects, tasks, links, wbs, disciplines, warnings };
+    return { projects, tasks, links, wbs, disciplines, dataDate, warnings };
   }
 
   window.XerParser = { parseXer };
