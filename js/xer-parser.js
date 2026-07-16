@@ -141,8 +141,29 @@
         return n === null ? null : n / hpd;
       };
 
-      const start = parseDate(row.early_start_date) || parseDate(row.act_start_date) || parseDate(row.target_start_date);
-      const finish = parseDate(row.early_end_date) || parseDate(row.act_end_date) || parseDate(row.target_end_date);
+      // Status-aware dates. P6 exports fill a completed activity's early
+      // dates with the DATA DATE (not its real dates), so actuals must win:
+      //   completed   -> actual start / actual finish
+      //   in progress -> actual start / forecast (early) finish
+      //   not started -> early start / early finish
+      const actS = parseDate(row.act_start_date);
+      const actE = parseDate(row.act_end_date);
+      const earlyS = parseDate(row.early_start_date);
+      const earlyE = parseDate(row.early_end_date);
+      const tgtS = parseDate(row.target_start_date);
+      const tgtE = parseDate(row.target_end_date);
+      const statusCode = row.status_code || "";
+      let start, finish;
+      if (statusCode === "TK_Complete") {
+        start = actS || earlyS || tgtS;
+        finish = actE || earlyE || tgtE;
+      } else if (statusCode === "TK_Active") {
+        start = actS || earlyS || tgtS;
+        finish = earlyE || tgtE || actE;
+      } else {
+        start = earlyS || tgtS || actS;
+        finish = earlyE || tgtE || actE;
+      }
 
       const totalFloat = toDays(row.total_float_hr_cnt);
       const typeUpper = (row.task_type || "TT_Task").toUpperCase();
@@ -161,10 +182,12 @@
         freeFloatDays: toDays(row.free_float_hr_cnt),
         start,
         finish,
-        lateStart: parseDate(row.late_start_date),
-        lateFinish: parseDate(row.late_end_date),
-        actualStart: parseDate(row.act_start_date),
-        actualFinish: parseDate(row.act_end_date),
+        // late dates are meaningless once an activity is complete (P6 fills
+        // them with junk), so blank them rather than mislead
+        lateStart: statusCode === "TK_Complete" ? null : parseDate(row.late_start_date),
+        lateFinish: statusCode === "TK_Complete" ? null : parseDate(row.late_end_date),
+        actualStart: actS,
+        actualFinish: actE,
         drivingPathFlag: row.driving_path_flag === "Y",
         isCritical: totalFloat !== null && totalFloat <= 0,
         isMilestone: typeUpper === "TT_MILE" || typeUpper === "TT_FINMILE",

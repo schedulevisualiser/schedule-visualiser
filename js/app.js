@@ -851,6 +851,15 @@
     const pxPerMonthScreen = timeScale.pxPerDay * 30.4 * zoom;
     const step = Math.max(1, Math.ceil(56 / pxPerMonthScreen));
 
+    // data-date position first, so month labels can step aside for it
+    let ddX = null;
+    if (model && model.dataDate) {
+      const x =
+        ((model.dataDate.getTime() - timeScale.min) / 86400000) *
+          timeScale.pxPerDay * zoom + panX;
+      if (x >= -60 && x <= width + 60) ddX = x;
+    }
+
     let ticks = "";
     let lines = "";
     const d = new Date(timeScale.min);
@@ -860,24 +869,21 @@
       const x = ((d.getTime() - timeScale.min) / 86400000) * timeScale.pxPerDay * zoom + panX;
       if (x > width) break;
       if (x >= -100 && i % step === 0) {
-        const label =
-          d.toLocaleDateString(undefined, { month: "short" }) +
-          " '" + String(d.getFullYear()).slice(2);
-        ticks += '<div class="ruler-tick" style="left:' + x + 'px">' + label + "</div>";
         lines += '<div class="gridline" style="left:' + x + 'px"></div>';
+        // keep month labels clear of the data-date label
+        if (ddX === null || x < ddX - 40 || x > ddX + 150) {
+          const label =
+            d.toLocaleDateString(undefined, { month: "short" }) +
+            " '" + String(d.getFullYear()).slice(2);
+          ticks += '<div class="ruler-tick" style="left:' + x + 'px">' + label + "</div>";
+        }
       }
       d.setMonth(d.getMonth() + 1);
     }
-    // data-date line: where the schedule was last statused
-    if (model && model.dataDate) {
-      const x =
-        ((model.dataDate.getTime() - timeScale.min) / 86400000) *
-          timeScale.pxPerDay * zoom + panX;
-      if (x >= -60 && x <= width + 60) {
-        ticks += '<div class="dd-label" style="left:' + x + 'px">Data date ' +
-          fmtDate(model.dataDate) + "</div>";
-        lines += '<div class="dd-line" style="left:' + x + 'px"></div>';
-      }
+    if (ddX !== null) {
+      ticks += '<div class="dd-label" style="left:' + ddX + 'px">Data date ' +
+        fmtDate(model.dataDate) + "</div>";
+      lines += '<div class="dd-line" style="left:' + ddX + 'px"></div>';
     }
     ruler.innerHTML = ticks;
     grid.innerHTML = lines;
