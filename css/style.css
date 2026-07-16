@@ -466,14 +466,120 @@ h2.section {
 }
 
 /* ---------- Graph toolbar & legend ---------- */
+/* sits below the 26px time ruler so dates are never covered */
 #graphToolbar {
   position: absolute;
-  top: 12px;
+  top: 34px;
   right: 12px;
   display: flex;
   gap: 8px;
   z-index: 10;
 }
+
+/* ---------- Active filter chips ---------- */
+#filterChips {
+  position: absolute;
+  top: 34px;
+  left: 12px;
+  z-index: 9;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 45%;
+  pointer-events: none;
+}
+
+.filter-chip {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(11, 11, 11, 0.08);
+}
+
+.filter-chip.info {
+  border-color: var(--border);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.filter-chip .chip-x {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 2px;
+}
+
+.filter-chip .chip-x:hover { color: var(--critical); }
+
+/* ---------- Expand / collapse chips on WBS balloons ---------- */
+#nodeChips {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.node-chip {
+  pointer-events: auto;
+  position: absolute;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(11, 11, 11, 0.3);
+}
+
+.node-chip:hover { filter: brightness(1.15); }
+.node-chip.collapse { background: #8a97a5; }
+
+/* ---------- Empty states ---------- */
+#dropHint, #emptyMsg {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-box {
+  pointer-events: auto;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  padding: 36px 48px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.drop-box h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  color: var(--text);
+}
+
+.drop-box p { margin: 4px 0; font-size: 13.5px; line-height: 1.5; }
+
+.drop-box .drop-note { margin-top: 12px; font-size: 12px; color: var(--faint); }
+
+.drop-box .btn { margin-top: 12px; }
 
 #legend {
   position: absolute;

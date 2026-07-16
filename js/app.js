@@ -13,7 +13,6 @@
   let focusTaskId = null;  // activity the trace is centred on
   let selectedProjId = ""; // "" = all projects
   let wbsTree = null;      // { children:Map, subCount:Map, roots:[] }
-  let durScale = false;    // stretch nodes to span their duration (time layout)
   let wbsMode = false;     // roll the diagram up to WBS groups
   // WBS groups the user has drilled into: their children (or tasks) are shown
   // instead of the group itself. Drives the top-down drill-down in WBS mode.
@@ -83,7 +82,7 @@
       '<span><span class="legend-swatch crit-outline"></span>Critical</span>' +
       '<span><span class="legend-swatch diamond"></span>Milestone</span>' +
       '<span><span class="legend-swatch focus-ring"></span>Traced</span>' +
-      "<span>Double-click: trace activity / expand WBS group · Right-click: collapse group</span>";
+      "<span>+ / double-click: expand group · − / right-click: collapse · double-click activity: trace</span>";
   }
   // what is currently drawn, so option changes can re-render the same view
   let lastView = { type: null, wbsId: null }; // type: full | trace | wbs
@@ -117,6 +116,15 @@
 
   function excludeMilestones() {
     return $("excludeMilestones").checked;
+  }
+
+  function durationBarsOn() {
+    return $("durScale").checked && !$("durScale").disabled;
+  }
+
+  // duration bars only make sense when x = time
+  function syncDurControl() {
+    $("durScale").disabled = !model || layoutMode() !== "time";
   }
 
   /**
@@ -248,7 +256,7 @@
       wbsMode,
       wbsExpanded: [...wbsExpanded],
       wbsLevel: $("wbsLevelSelect").value,
-      durScale,
+      durScale: $("durScale").checked,
       layout: $("layoutSelect").value,
       direction: $("directionSelect").value,
       depth: $("depthSelect").value,
@@ -267,6 +275,44 @@
 
   function commitState() {
     if (model) lastCommitted = captureState();
+    updateFilterChips();
+  }
+
+  // Dismissible chips above the diagram showing which filters are active,
+  // so a forgotten filter never silently empties the view.
+  function updateFilterChips() {
+    const wrap = $("filterChips");
+    if (!model) {
+      wrap.innerHTML = "";
+      return;
+    }
+    const chips = [];
+    if (criticalOnly()) {
+      chips.push({ label: "Critical only (float ≤ " + floatThreshold() + "d)", control: "criticalOnly" });
+    }
+    if (excludeMilestones()) {
+      chips.push({ label: "Milestones hidden", control: "excludeMilestones" });
+    }
+    if (durationBarsOn()) {
+      chips.push({ label: "Duration bars", control: "durScale" });
+    }
+    let html = chips
+      .map(
+        (c) =>
+          '<span class="filter-chip">' + escapeHtml(c.label) +
+          '<span class="chip-x" data-x="' + c.control + '" title="Turn this off">✕</span></span>'
+      )
+      .join("");
+    if (wbsMode) {
+      const lv = $("wbsLevelSelect").value;
+      html +=
+        '<span class="filter-chip info">WBS roll-up · ' +
+        (lv === "99" ? "all tasks" : "level " + lv) + "</span>";
+    }
+    wrap.innerHTML = html;
+    for (const x of wrap.querySelectorAll("[data-x]")) {
+      x.addEventListener("click", () => $(x.getAttribute("data-x")).click());
+    }
   }
 
   function pushUndo() {
@@ -300,9 +346,8 @@
     $("wbsLevelSelect").value = s.wbsLevel;
     toggleWbsMode(s.wbsMode);          // also shows/hides the level dropdown
     wbsExpanded = new Set(s.wbsExpanded); // after toggle, which resets it
-    durScale = s.durScale;
-    $("durScaleBtn").textContent = "Duration bars: " + (durScale ? "On" : "Off");
-    $("durScaleBtn").classList.toggle("active", durScale);
+    $("durScale").checked = !!s.durScale;
+    syncDurControl();
     focusTaskId = s.focusTaskId;
     lastView = { ...s.lastView };
 
@@ -380,6 +425,13 @@
 
       $("searchInput").value = "";
       $("searchInput").disabled = false;
+      $("dropHint").style.display = "none";
+      for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
+                        "floatThreshold", "excludeMilestones", "wbsModeBtn",
+                        "fullNetworkBtn", "fitBtn"]) {
+        $(id).disabled = false;
+      }
+      syncDurControl();
       $("detailsPanel").innerHTML =
         '<p class="hint">Search for an activity above, or click a node in the diagram.</p>';
 
@@ -722,13 +774,19 @@
     if (days * pxPerDay < 1200) pxPerDay = 1200 / days;
     timeScale = { min, pxPerDay };
 
-    // node width: fixed box, or duration-scaled bar when toggled on
-    // (durations are workdays; the axis is calendar days, so scale by ~7/5)
-    const widths = durScale ? {} : null;
+    // node width: fixed box, or a bar spanning start -> finish when
+    // duration bars are on (real dates, so bar ends line up with the axis)
+    const durOn = durationBarsOn();
+    const widths = durOn ? {} : null;
     const nodeWidth = (t) => {
       if (t.isMilestone) return 70;
-      if (!durScale) return NODE_W;
-      const calDays = (t.durationDays || 0) * 1.4;
+      if (!durOn) return NODE_W;
+      let calDays;
+      if (t.start && t.finish) {
+        calDays = (t.finish.getTime() - t.start.getTime()) / 86400000;
+      } else {
+        calDays = (t.durationDays || 0) * 1.4; // no dates: rough estimate
+      }
       return Math.max(46, calDays * pxPerDay);
     };
 
@@ -867,10 +925,9 @@
       if (f && (!g.finish || f > g.finish)) g.finish = f;
     }
     for (const g of groups.values()) {
-      // span in calendar days; nodeWidth() multiplies by 1.4 (workday
-      // fudge) so divide it back out here
+      // calendar span; bar widths use start/finish directly
       if (g.start && g.finish) {
-        g.durationDays = (g.finish.getTime() - g.start.getTime()) / 86400000 / 1.4;
+        g.durationDays = (g.finish.getTime() - g.start.getTime()) / 86400000;
       }
     }
 
@@ -1049,6 +1106,8 @@
     animateNext = false;
     morphOrigin = null;
     updateRuler();
+    updateNodeChips();
+    $("emptyMsg").style.display = cy.nodes().length ? "none" : "flex";
   }
 
   function linksAmong(nodeIds) {
@@ -1120,9 +1179,7 @@
 
   function toggleWbsMode(on) {
     wbsMode = on;
-    const btn = $("wbsModeBtn");
-    btn.textContent = "WBS mode: " + (wbsMode ? "On" : "Off");
-    btn.classList.toggle("active", wbsMode);
+    $("wbsModeBtn").classList.toggle("active", wbsMode);
     $("wbsLevelSelect").style.display = wbsMode ? "" : "none";
     if (wbsMode && model) {
       setUniformWbsLevel(parseInt($("wbsLevelSelect").value, 10) || 1);
@@ -1133,6 +1190,83 @@
     if (lastView.type === "trace" && focusTaskId) renderTrace();
     else if (lastView.type === "wbs") renderWbsView(lastView.wbsId);
     else if (lastView.type === "full") renderFullNetwork();
+  }
+
+  // ---------- WBS drill-down (shared by chips, double-click, right-click) ----------
+  function expandGroup(wbsId, origin) {
+    if (!model || wbsExpanded.has(wbsId)) return;
+    pushUndo();
+    wbsExpanded.add(wbsId);
+    keepViewportOnce = true;
+    animateNext = true;
+    morphOrigin = origin || null;
+    busy("Expanding…", rerenderLastView);
+  }
+
+  function collapseGroup(parentWbsId, origin) {
+    if (!model || !parentWbsId || !wbsExpanded.has(parentWbsId)) return;
+    pushUndo();
+    wbsExpanded.delete(parentWbsId);
+    keepViewportOnce = true;
+    animateNext = true;
+    morphOrigin = origin || null;
+    busy("Collapsing…", rerenderLastView);
+  }
+
+  /**
+   * Small + / − buttons on each WBS balloon, so drilling doesn't rely on
+   * knowing the double-click / right-click gestures. HTML overlay kept in
+   * sync with the balloons' rendered positions.
+   */
+  function updateNodeChips() {
+    const wrap = $("nodeChips");
+    if (!model || !wbsMode || !cy) {
+      wrap.innerHTML = "";
+      return;
+    }
+    const groups = cy.nodes(".wbsnode");
+    let html = "";
+    groups.forEach((n) => {
+      const rw = n.renderedWidth();
+      if (rw < 46) return; // too small at this zoom to host buttons
+      const rp = n.renderedPosition();
+      const topY = rp.y - n.renderedHeight() / 2 - 9;
+      const wbsId = n.id().slice(2);
+      html +=
+        '<button class="node-chip expand" data-exp="' + escapeHtml(wbsId) +
+        '" title="Expand into the next WBS level" style="left:' +
+        (rp.x + rw / 2 - 10) + "px;top:" + topY + 'px">+</button>';
+      const parent = (model.wbs.get(wbsId) || {}).parentId;
+      if (parent && wbsExpanded.has(parent)) {
+        html +=
+          '<button class="node-chip collapse" data-col="' + escapeHtml(parent) +
+          '" data-node="' + escapeHtml(n.id()) +
+          '" title="Collapse back up a level" style="left:' +
+          (rp.x + rw / 2 - 32) + "px;top:" + topY + 'px">−</button>';
+      }
+    });
+    wrap.innerHTML = html;
+    for (const b of wrap.querySelectorAll("[data-exp]")) {
+      b.addEventListener("click", () => {
+        const n = cy.getElementById("g-" + b.getAttribute("data-exp"));
+        expandGroup(b.getAttribute("data-exp"), n.nonempty() ? { x: n.position("x"), y: n.position("y") } : null);
+      });
+    }
+    for (const b of wrap.querySelectorAll("[data-col]")) {
+      b.addEventListener("click", () => {
+        const n = cy.getElementById(b.getAttribute("data-node"));
+        collapseGroup(b.getAttribute("data-col"), n.nonempty() ? { x: n.position("x"), y: n.position("y") } : null);
+      });
+    }
+  }
+
+  let chipRaf = null;
+  function scheduleNodeChips() {
+    if (chipRaf) return;
+    chipRaf = requestAnimationFrame(() => {
+      chipRaf = null;
+      updateNodeChips();
+    });
   }
 
   // ---------- Details panel ----------
@@ -1405,12 +1539,7 @@
         focusOn(id);
       } else if (id.startsWith("g-")) {
         // drill down: expand this group into its next level (or its tasks)
-        pushUndo();
-        wbsExpanded.add(id.slice(2));
-        keepViewportOnce = true;
-        animateNext = true;
-        morphOrigin = { x: evt.target.position("x"), y: evt.target.position("y") };
-        busy("Expanding…", rerenderLastView);
+        expandGroup(id.slice(2), { x: evt.target.position("x"), y: evt.target.position("y") });
       }
     });
     cy.on("cxttap", "node", (evt) => {
@@ -1423,20 +1552,33 @@
       } else if (model.tasks.has(id)) {
         parentWbs = model.tasks.get(id).wbsId;
       }
-      if (parentWbs && wbsExpanded.has(parentWbs)) {
-        pushUndo();
-        wbsExpanded.delete(parentWbs);
-        keepViewportOnce = true;
-        animateNext = true;
-        morphOrigin = { x: evt.target.position("x"), y: evt.target.position("y") };
-        busy("Collapsing…", rerenderLastView);
-      }
+      collapseGroup(parentWbs, { x: evt.target.position("x"), y: evt.target.position("y") });
     });
     cy.on("pan zoom", () => {
       updateRuler();
       hideTooltip();
+      scheduleNodeChips();
     });
-    window.addEventListener("resize", updateRuler);
+    window.addEventListener("resize", () => {
+      updateRuler();
+      scheduleNodeChips();
+    });
+
+    // in time layouts x = date, so nodes may only be dragged vertically
+    cy.on("grab", "node", (evt) => {
+      if (timeScale) evt.target.scratch("_lockX", evt.target.position("x"));
+    });
+    cy.on("drag", "node", (evt) => {
+      const lockX = evt.target.scratch("_lockX");
+      if (timeScale && lockX !== undefined) {
+        const p = evt.target.position();
+        if (p.x !== lockX) evt.target.position({ x: lockX, y: p.y });
+      }
+    });
+    cy.on("free", "node", (evt) => {
+      evt.target.removeScratch("_lockX");
+      scheduleNodeChips();
+    });
   }
 
   // ---------- Node tooltip (shown on click, dismissed by mouse movement) ----------
@@ -1607,13 +1749,16 @@
     });
 
     $("undoBtn").addEventListener("click", undo);
+    $("emptyUndoBtn").addEventListener("click", undo);
 
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
-                      "floatThreshold", "excludeMilestones"]) {
+                      "floatThreshold", "excludeMilestones", "durScale"]) {
       $(id).addEventListener("change", () => {
         if (!model) return;
         pushUndo();
+        syncDurControl(); // duration bars grey out in logic-flow layout
         if (lastView.type) busy("Updating view…", rerenderLastView);
+        else commitState();
       });
     }
 
@@ -1629,16 +1774,6 @@
       pushUndo();
       setUniformWbsLevel(parseInt(e.target.value, 10) || 1);
       if (wbsMode && lastView.type) busy("Updating view…", rerenderLastView);
-      else commitState();
-    });
-
-    $("durScaleBtn").addEventListener("click", () => {
-      pushUndo();
-      durScale = !durScale;
-      const btn = $("durScaleBtn");
-      btn.textContent = "Duration bars: " + (durScale ? "On" : "Off");
-      btn.classList.toggle("active", durScale);
-      if (model && lastView.type) busy("Updating view…", rerenderLastView);
       else commitState();
     });
 

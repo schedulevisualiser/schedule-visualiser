@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
   <div id="app">
@@ -37,23 +37,23 @@
       </div>
 
       <div>
-        <h2 class="section">Trace options</h2>
+        <h2 class="section">View options</h2>
         <div class="options" style="margin-top:8px">
           <label for="layoutSelect">Layout</label>
-          <select id="layoutSelect">
+          <select id="layoutSelect" disabled>
             <option value="time">Time order (left → right)</option>
             <option value="logic">Logic flow</option>
           </select>
 
           <label for="directionSelect">Direction</label>
-          <select id="directionSelect">
+          <select id="directionSelect" disabled>
             <option value="both">Predecessors + successors</option>
             <option value="pred">Predecessors only</option>
             <option value="succ">Successors only</option>
           </select>
 
           <label for="depthSelect">Depth</label>
-          <select id="depthSelect">
+          <select id="depthSelect" disabled>
             <option value="all">Full chain</option>
             <option value="1">1 level</option>
             <option value="2">2 levels</option>
@@ -63,15 +63,20 @@
           </select>
 
           <div class="check-row">
-            <input type="checkbox" id="criticalOnly">
+            <input type="checkbox" id="criticalOnly" disabled>
             <label for="criticalOnly">Critical paths only, float ≤</label>
-            <input type="number" id="floatThreshold" value="0" step="1">
+            <input type="number" id="floatThreshold" value="0" step="1" disabled>
             <span>days</span>
           </div>
 
           <div class="check-row">
-            <input type="checkbox" id="excludeMilestones">
+            <input type="checkbox" id="excludeMilestones" disabled>
             <label for="excludeMilestones" title="Hide milestones; their predecessors connect straight to their successors (dashed edges) so chains stay intact">Exclude milestones</label>
+          </div>
+
+          <div class="check-row">
+            <input type="checkbox" id="durScale" disabled>
+            <label for="durScale" title="Each bar spans its start to finish date on the time axis (time layout only)">Duration bars</label>
           </div>
 
         </div>
@@ -88,16 +93,32 @@
     <div id="graphWrap">
       <div id="graphToolbar">
         <button class="btn" id="undoBtn" title="Undo the last change to the view (Ctrl+Z)" disabled>↩ Undo</button>
-        <button class="btn" id="wbsModeBtn" title="Roll the diagram up to WBS headings: one node per WBS group, edges where logic crosses between groups. Double-click a group to expand it; right-click to collapse.">WBS mode: Off</button>
+        <button class="btn" id="wbsModeBtn" title="Roll the diagram up to WBS headings: one node per WBS group, edges where logic crosses between groups. Expand with the + chip or double-click; collapse with the − chip or right-click." disabled>WBS roll-up</button>
         <select id="wbsLevelSelect" title="Roll-up depth: reset every group to this WBS level" style="display:none"></select>
-        <button class="btn" id="durScaleBtn" title="Stretch each activity to span its duration on the time axis (time layout only)">Duration bars: Off</button>
-        <button class="btn" id="fullNetworkBtn" title="Show every activity in the schedule, no WBS grouping">Full network</button>
-        <button class="btn" id="fitBtn">Fit view</button>
+        <button class="btn" id="fullNetworkBtn" title="Show every activity in the schedule, no WBS grouping" disabled>Full network</button>
+        <button class="btn" id="fitBtn" disabled>Fit view</button>
       </div>
+      <div id="filterChips"></div>
       <div id="gridlines"></div>
       <div id="graph"></div>
       <div id="timeRuler" style="display:none"></div>
+      <div id="nodeChips"></div>
       <div id="nodeTooltip" style="display:none"></div>
+      <div id="dropHint">
+        <div class="drop-box">
+          <h2>Visualise a Primavera P6 schedule</h2>
+          <p>Drag a <strong>.xer</strong> file anywhere onto this page,<br>
+             click <strong>Open .xer file</strong>, or try the <strong>sample project</strong>.</p>
+          <p class="drop-note">Files are read entirely in your browser — nothing is uploaded anywhere.</p>
+        </div>
+      </div>
+      <div id="emptyMsg" style="display:none">
+        <div class="drop-box">
+          <h2>Nothing to show</h2>
+          <p>No activities match the current view and filters.</p>
+          <button class="btn" id="emptyUndoBtn">↩ Undo last change</button>
+        </div>
+      </div>
       <div id="spinner" style="display:none">
         <div class="wheel"></div>
         <div id="spinnerMsg">Working…</div>
@@ -114,8 +135,8 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=13"></script>
-  <script src="js/xer-parser.js?v=13"></script>
-  <script src="js/app.js?v=13"></script>
+  <script src="js/sample-data.js?v=14"></script>
+  <script src="js/xer-parser.js?v=14"></script>
+  <script src="js/app.js?v=14"></script>
 </body>
 </html>

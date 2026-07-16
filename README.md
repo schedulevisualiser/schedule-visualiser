@@ -34,20 +34,25 @@ there is no server-side processing, which matters for confidential programmes.
      start date, left → right through time, packed into lanes grouped by
      discipline, with a month ruler and gridlines. "Logic flow" instead lets
      the relationship structure dictate positions (classic PERT-style).
-   - **Duration bars** (toolbar toggle, off by default) — stretches each
-     activity box to span its duration on the time axis, Gantt-style. Long
-     activities become long bars, so leave it off if that clutters the view.
+   - **Duration bars** (View options, off by default; time layout only) —
+     each bar spans its real start → finish dates on the axis, Gantt-style.
+     In time layouts nodes can only be dragged vertically, since horizontal
+     position means dates.
    - **WBS mode** (toolbar toggle, ON by default when a file loads) — rolls
      the diagram up to
      WBS headings, starting at level 1 (the disciplines). Task links crossing
      between groups merge into single edges (labelled ×N when several), and
      groups containing critical work are flagged red — showing how the
      critical path flows across disciplines and work packages.
-     **Double-click a group to drill into its next level down** (repeat to
-     reach individual tasks); **right-click to collapse** a branch back up;
-     use the **Level dropdown** to reset the whole diagram to a uniform WBS
-     depth. Click a group for its member activities. Works with every view
-     and the critical-only filter.
+     Use the **+ chip** on a balloon (or double-click it) to drill into its
+     next level down, repeating to reach individual tasks; the **− chip**
+     (or right-click) collapses a branch back up. The **Level dropdown**
+     resets the whole diagram to a uniform WBS depth. Click a group for its
+     member activities. Works with every view and the critical-only filter.
+   - **Filter chips** above the diagram show which filters are active
+     (critical-only, milestones hidden, duration bars); click a chip's ✕ to
+     turn that filter off. If a view comes back empty, an in-canvas message
+     offers one-click undo.
    - **Direction** — predecessors, successors, or both
    - **Depth** — full chain or a limited number of levels
    - **Critical paths only** — hide activities with total float above the
