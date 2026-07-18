@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
   <div id="app">
@@ -130,13 +130,36 @@
         <span>Double-click: trace activity / expand WBS group · Right-click: collapse group</span>
       </div>
     </div>
+
+    <div id="ganttWrap">
+      <div id="ganttToolbar">
+        <button class="btn" id="ganttZoomOut" title="Zoom out (more time on screen)">−</button>
+        <button class="btn" id="ganttZoomIn" title="Zoom in (more detail)">+</button>
+      </div>
+      <div id="ganttScroll">
+        <div class="g-row g-scale">
+          <div class="g-label g-corner">Activity</div>
+          <div class="g-track" id="ganttScaleTrack"></div>
+        </div>
+        <div id="ganttRows"></div>
+        <svg id="ganttSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="ganttDD" style="display:none"></div>
+      </div>
+      <div id="ganttHint">Click a bar to see and step through its logic — blue = predecessors, purple = successors</div>
+      <div id="ganttEmpty" style="display:none">No activities match the current filters.</div>
+    </div>
+
+    <div id="tabBar">
+      <button class="tab active" data-tab="network">Network diagram</button>
+      <button class="tab" data-tab="gantt">Gantt chart</button>
+    </div>
   </div>
 
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=16"></script>
-  <script src="js/xer-parser.js?v=16"></script>
-  <script src="js/app.js?v=16"></script>
+  <script src="js/sample-data.js?v=17"></script>
+  <script src="js/xer-parser.js?v=17"></script>
+  <script src="js/app.js?v=17"></script>
 </body>
 </html>

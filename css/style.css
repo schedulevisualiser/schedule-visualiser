@@ -43,13 +43,43 @@ body.dragging::after {
 /* ---------- Layout ---------- */
 #app {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto 1fr auto;
   grid-template-columns: 330px 1fr;
   grid-template-areas:
     "header header"
     "status status"
-    "sidebar graph";
+    "sidebar graph"
+    "tabs tabs";
   height: 100%;
+}
+
+/* ---------- Bottom tab bar ---------- */
+#tabBar {
+  grid-area: tabs;
+  display: flex;
+  gap: 4px;
+  padding: 5px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+#tabBar .tab {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 20px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#tabBar .tab:hover { color: var(--text); }
+
+#tabBar .tab.active {
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--accent);
+  font-weight: 650;
 }
 
 header {
@@ -621,3 +651,165 @@ h2.section {
   margin-right: 7px;
 }
 .legend-swatch.focus-ring { background: var(--panel-2); border: 2.5px solid var(--gold); }
+
+/* ---------- Gantt chart tab ---------- */
+#ganttWrap {
+  grid-area: graph;
+  position: relative;
+  display: none; /* shown when the Gantt tab is active */
+  flex-direction: column;
+  background: var(--panel);
+  min-height: 0;
+}
+
+#ganttToolbar {
+  position: absolute;
+  top: 38px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+}
+
+#ganttToolbar .btn { padding: 4px 12px; font-size: 15px; font-weight: 700; }
+
+#ganttScroll {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  min-height: 0;
+}
+
+.g-row { display: flex; height: 24px; }
+
+.g-label {
+  flex: 0 0 300px;
+  width: 300px;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid #f1efe8;
+  font-size: 11.5px;
+  line-height: 23px;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.g-code { font-weight: 650; }
+
+.g-row.g-head .g-label {
+  background: var(--panel-2);
+  font-weight: 700;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.g-track {
+  position: relative;
+  flex: 0 0 auto;
+  border-bottom: 1px solid #f6f4ee;
+}
+
+.g-bar {
+  position: absolute;
+  top: 5px;
+  height: 13px;
+  border: 1.2px solid;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.g-bar.crit { border-width: 2px; }
+.g-bar.done { opacity: 0.5; }
+
+.g-ms {
+  position: absolute;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+.g-ms.crit { outline: 2px solid var(--critical); outline-offset: 1px; }
+
+/* selection & logic highlighting */
+.g-row.sel .g-label { background: rgba(199, 125, 0, 0.14); }
+.g-row.sel .g-bar, .g-row.sel .g-ms { box-shadow: 0 0 0 2.5px var(--gold); }
+.g-row.pred .g-label { background: rgba(42, 120, 214, 0.10); }
+.g-row.pred .g-bar, .g-row.pred .g-ms { box-shadow: 0 0 0 2px #2a78d6; }
+.g-row.succ .g-label { background: rgba(124, 58, 237, 0.10); }
+.g-row.succ .g-bar, .g-row.succ .g-ms { box-shadow: 0 0 0 2px #7c3aed; }
+
+.g-row.g-scale {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 30px;
+  background: var(--panel);
+}
+
+.g-row.g-scale .g-label {
+  z-index: 6;
+  line-height: 29px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--faint);
+  border-bottom: 1px solid var(--border);
+}
+
+.g-row.g-scale .g-track { border-bottom: 1px solid var(--border); }
+
+.g-tick {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-left: 1px solid var(--border);
+  padding: 8px 0 0 5px;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+#ganttSvg {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#ganttDD {
+  position: absolute;
+  top: 0;
+  width: 0;
+  border-left: 2px dashed var(--accent);
+  z-index: 2;
+  pointer-events: none;
+}
+
+#ganttHint {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  color: var(--faint);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+#ganttEmpty {
+  position: absolute;
+  inset: 30px 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 14px;
+  background: var(--panel);
+  z-index: 4;
+}

@@ -362,6 +362,7 @@
       }
       if (s.viewport) cy.viewport(s.viewport);
       updateRuler();
+      if (activeTab === "gantt") renderGantt(); // filters may have changed
     });
   }
 
@@ -441,6 +442,9 @@
       $("wbsLevelSelect").value = "1";
       toggleWbsMode(true);
       renderFullNetwork();
+      ganttSel = null;
+      networkStale = false;
+      if (activeTab === "gantt") renderGantt();
     });
   }
 
@@ -593,6 +597,11 @@
         tog.textContent = open ? "▸" : "▾";
       });
       row.addEventListener("click", () => {
+        if (activeTab === "gantt") {
+          selectWbsRow(id);
+          ganttScrollToWbs(id);
+          return;
+        }
         pushUndo();
         selectWbsRow(id);
         busy("Drawing " + w.name + "…", () => renderWbsView(id));
@@ -1342,6 +1351,10 @@
     for (const li of $("detailsPanel").querySelectorAll(".rel-item")) {
       li.addEventListener("click", () => {
         const id = li.getAttribute("data-task");
+        if (activeTab === "gantt") {
+          ganttSelect(id, true); // step through the logic chain in the Gantt
+          return;
+        }
         showDetails(id);
         const node = cy.getElementById(id);
         if (node.nonempty()) {
@@ -1359,6 +1372,7 @@
   }
 
   function focusOn(taskId) {
+    if (activeTab === "gantt") switchTab("network"); // traces live on the network
     pushUndo();
     focusTaskId = taskId;
     busy("Tracing…", () => {
@@ -1443,13 +1457,256 @@
         $("searchInput").value = "";
         const wbsId = item.getAttribute("data-wbs");
         if (wbsId) {
-          pushUndo();
-          selectWbsRow(wbsId);
-          busy("Drawing…", () => renderWbsView(wbsId));
+          if (activeTab === "gantt") {
+            selectWbsRow(wbsId);
+            ganttScrollToWbs(wbsId);
+          } else {
+            pushUndo();
+            selectWbsRow(wbsId);
+            busy("Drawing…", () => renderWbsView(wbsId));
+          }
+        } else if (activeTab === "gantt") {
+          ganttSelect(item.getAttribute("data-task"), true);
         } else {
           focusOn(item.getAttribute("data-task"));
         }
       });
+    }
+  }
+
+  // ---------- Gantt chart tab ----------
+  let activeTab = "network"; // network | gantt
+  let networkStale = false;  // filters changed while the Gantt tab was active
+  let ganttZoomMult = 1;
+  let ganttSel = null;       // selected activity id in the Gantt
+  let ganttGeom = null;      // { geom:Map(id->{x,w,y}), min, px, trackW, height, grid }
+  const G_LABEL_W = 300;
+  const G_ROW_H = 24;
+  const G_SCALE_H = 30;
+
+  function ganttTasks() {
+    let list = visibleTasks().filter((t) => t.start);
+    if (criticalOnly()) list = list.filter(isCriticalTask);
+    if (excludeMilestones()) list = list.filter((t) => !t.isMilestone);
+    return list;
+  }
+
+  function renderGantt() {
+    if (!model) return;
+    const list = ganttTasks();
+    $("ganttEmpty").style.display = list.length ? "none" : "flex";
+    const host = $("ganttRows");
+    if (!list.length) {
+      host.innerHTML = "";
+      $("ganttSvg").innerHTML = "";
+      $("ganttDD").style.display = "none";
+      ganttGeom = null;
+      return;
+    }
+
+    const min = Math.min(...list.map((t) => t.start.getTime()));
+    const max = Math.max(...list.map((t) => (t.finish || t.start).getTime()));
+    const days = Math.max(1, (max - min) / 86400000);
+    const px = Math.min(8, Math.max(0.4, 1300 / days)) * ganttZoomMult;
+    const trackW = Math.ceil(days * px) + 120;
+
+    // group rows by discipline, in schedule order, tasks by start date
+    const byDisc = new Map();
+    for (const t of list) {
+      const k = t.discipline || "(no WBS)";
+      if (!byDisc.has(k)) byDisc.set(k, []);
+      byDisc.get(k).push(t);
+    }
+    const order = model.disciplines.map((d) => d.name).filter((n) => byDisc.has(n));
+    for (const k of byDisc.keys()) if (!order.includes(k)) order.push(k);
+
+    const geom = new Map();
+    let html = "";
+    let y = 0;
+    for (const gname of order) {
+      const base = disciplineColour.get(gname) || NEUTRAL_SERIES;
+      html +=
+        '<div class="g-row g-head"><div class="g-label" style="box-shadow: inset 4px 0 0 ' +
+        base + '">' + escapeHtml(gname) +
+        '</div><div class="g-track" style="width:' + trackW + 'px"></div></div>';
+      y += G_ROW_H;
+      const items = byDisc.get(gname).sort((a, b) => a.start - b.start);
+      for (const t of items) {
+        const x = ((t.start.getTime() - min) / 86400000) * px;
+        const w = Math.max((((t.finish || t.start).getTime() - t.start.getTime()) / 86400000) * px, 2);
+        const col = colourFor(t.discipline, wbsTree.depths.get(t.wbsId) || 3);
+        const crit = isCriticalTask(t);
+        let bar;
+        if (t.isMilestone) {
+          bar =
+            '<div class="g-ms' + (crit ? " crit" : "") + '" style="left:' +
+            (x - 5).toFixed(1) + "px;background:" + col.bd + '"></div>';
+          geom.set(t.id, { x, w: 0, y: y + G_ROW_H / 2 });
+        } else {
+          bar =
+            '<div class="g-bar' + (crit ? " crit" : "") +
+            (t.status === "TK_Complete" ? " done" : "") + '" style="left:' +
+            x.toFixed(1) + "px;width:" + w.toFixed(1) + "px;background:" + col.bg +
+            ";border-color:" + (crit ? CRITICAL_RED : col.bd) + '"></div>';
+          geom.set(t.id, { x, w, y: y + G_ROW_H / 2 });
+        }
+        html +=
+          '<div class="g-row g-task" data-task="' + escapeHtml(t.id) +
+          '"><div class="g-label" title="' + escapeHtml(t.code + " " + t.name) +
+          '"><span class="g-code">' + escapeHtml(t.code) + "</span> " +
+          escapeHtml(t.name) + '</div><div class="g-track" style="width:' +
+          trackW + 'px">' + bar + "</div></div>";
+        y += G_ROW_H;
+      }
+    }
+    host.innerHTML = html;
+    ganttGeom = { geom, min, px, trackW, height: y, grid: "" };
+    buildGanttScale();
+    if (ganttSel && !geom.has(ganttSel)) ganttSel = null; // filtered away
+    ganttApplySelection();
+    drawGanttLinks();
+  }
+
+  function buildGanttScale() {
+    const trk = $("ganttScaleTrack");
+    const { min, px, trackW, height } = ganttGeom;
+    trk.style.width = trackW + "px";
+    const stepMonths = Math.max(1, Math.ceil(60 / (30.4 * px)));
+    let ticks = "";
+    let grid = "";
+    const d = new Date(min);
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 500; i++) {
+      const x = ((d.getTime() - min) / 86400000) * px;
+      if (x > trackW) break;
+      if (x >= -80 && i % stepMonths === 0) {
+        ticks +=
+          '<div class="g-tick" style="left:' + x.toFixed(1) + 'px">' +
+          d.toLocaleDateString(undefined, { month: "short" }) +
+          " '" + String(d.getFullYear()).slice(2) + "</div>";
+        grid +=
+          '<line x1="' + x.toFixed(1) + '" y1="0" x2="' + x.toFixed(1) +
+          '" y2="' + height + '" stroke="rgba(11,11,11,0.05)" stroke-width="1"/>';
+      }
+      d.setMonth(d.getMonth() + 1);
+    }
+    trk.innerHTML = ticks;
+    ganttGeom.grid = grid;
+
+    const svg = $("ganttSvg");
+    svg.style.left = G_LABEL_W + "px";
+    svg.style.top = G_SCALE_H + "px";
+    svg.setAttribute("width", trackW);
+    svg.setAttribute("height", height);
+
+    const dd = $("ganttDD");
+    if (model.dataDate) {
+      const x = ((model.dataDate.getTime() - min) / 86400000) * px;
+      dd.style.display = "";
+      dd.style.left = (G_LABEL_W + x).toFixed(1) + "px";
+      dd.style.height = G_SCALE_H + height + "px";
+    } else {
+      dd.style.display = "none";
+    }
+  }
+
+  function drawGanttLinks() {
+    const svg = $("ganttSvg");
+    if (!ganttGeom) {
+      svg.innerHTML = "";
+      return;
+    }
+    let out = "";
+    if (ganttSel && model.tasks.has(ganttSel)) {
+      const me = ganttGeom.geom.get(ganttSel);
+      if (me) {
+        const draw = (link, incoming) => {
+          const otherId = incoming ? link.predId : link.succId;
+          const o = ganttGeom.geom.get(otherId);
+          if (!o) return;
+          const predG = incoming ? o : me;
+          const succG = incoming ? me : o;
+          const tl = link.typeLabel;
+          const x1 = predG.x + (tl === "FS" || tl === "FF" ? predG.w : 0);
+          const x2 = succG.x + (tl === "FF" || tl === "SF" ? succG.w : 0);
+          const colr = incoming ? "#2a78d6" : "#7c3aed";
+          out +=
+            '<path d="M ' + x1.toFixed(1) + " " + predG.y + " L " +
+            (x1 + 9).toFixed(1) + " " + predG.y + " L " + (x1 + 9).toFixed(1) +
+            " " + succG.y + " L " + x2.toFixed(1) + " " + succG.y +
+            '" fill="none" stroke="' + colr +
+            '" stroke-width="1.7" marker-end="url(#gArrow' +
+            (incoming ? "P" : "S") + ')"/>';
+        };
+        const t = model.tasks.get(ganttSel);
+        for (const l of t.predecessors) draw(l, true);
+        for (const l of t.successors) draw(l, false);
+      }
+    }
+    svg.innerHTML =
+      ganttGeom.grid +
+      '<defs><marker id="gArrowP" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2a78d6"/></marker>' +
+      '<marker id="gArrowS" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#7c3aed"/></marker></defs>' +
+      out;
+  }
+
+  function ganttApplySelection() {
+    const host = $("ganttRows");
+    for (const r of host.querySelectorAll(".g-row.sel, .g-row.pred, .g-row.succ")) {
+      r.classList.remove("sel", "pred", "succ");
+    }
+    if (!ganttSel || !model.tasks.has(ganttSel)) return;
+    const mark = (id, cls) => {
+      const row = host.querySelector('[data-task="' + CSS.escape(id) + '"]');
+      if (row) row.classList.add(cls);
+    };
+    const t = model.tasks.get(ganttSel);
+    for (const l of t.predecessors) mark(l.predId, "pred");
+    for (const l of t.successors) mark(l.succId, "succ");
+    mark(ganttSel, "sel");
+  }
+
+  function ganttSelect(id, scrollTo) {
+    if (!model || !model.tasks.has(id)) return;
+    ganttSel = id;
+    ganttApplySelection();
+    drawGanttLinks();
+    showDetails(id);
+    if (scrollTo && ganttGeom && ganttGeom.geom.has(id)) {
+      const row = $("ganttRows").querySelector('[data-task="' + CSS.escape(id) + '"]');
+      if (row) row.scrollIntoView({ block: "center" });
+      const sc = $("ganttScroll");
+      const g = ganttGeom.geom.get(id);
+      sc.scrollLeft = Math.max(0, g.x - (sc.clientWidth - G_LABEL_W) / 2 + 60);
+    }
+  }
+
+  function ganttScrollToWbs(wbsId) {
+    if (!ganttGeom) return;
+    const inSubtree = wbsDescendants(wbsId);
+    for (const row of $("ganttRows").querySelectorAll(".g-task")) {
+      const t = model.tasks.get(row.getAttribute("data-task"));
+      if (t && inSubtree.has(t.wbsId)) {
+        row.scrollIntoView({ block: "center" });
+        return;
+      }
+    }
+  }
+
+  function switchTab(tab) {
+    if (tab === activeTab) return;
+    activeTab = tab;
+    for (const b of document.querySelectorAll("#tabBar .tab")) {
+      b.classList.toggle("active", b.dataset.tab === tab);
+    }
+    $("graphWrap").style.display = tab === "network" ? "" : "none";
+    $("ganttWrap").style.display = tab === "gantt" ? "flex" : "none";
+    if (tab === "gantt") {
+      if (model) busy("Building Gantt chart…", renderGantt);
+    } else if (networkStale && model && lastView.type) {
+      networkStale = false;
+      busy("Updating view…", rerenderLastView);
     }
   }
 
@@ -1760,6 +2017,11 @@
         hideTooltip();
         if (cy) cy.nodes().removeClass("selected");
         $("searchResults").style.display = "none";
+        if (activeTab === "gantt" && ganttSel) {
+          ganttSel = null;
+          ganttApplySelection();
+          drawGanttLinks();
+        }
       }
       // Ctrl+Z: undo the last view change (unless typing in a field)
       const inField =
@@ -1773,14 +2035,39 @@
     $("undoBtn").addEventListener("click", undo);
     $("emptyUndoBtn").addEventListener("click", undo);
 
+    // bottom tabs: network diagram <-> gantt chart
+    for (const b of document.querySelectorAll("#tabBar .tab")) {
+      b.addEventListener("click", () => switchTab(b.dataset.tab));
+    }
+
+    // gantt interactions: click a row/bar to select and show its logic
+    $("ganttRows").addEventListener("click", (e) => {
+      const row = e.target.closest(".g-row.g-task");
+      if (row) ganttSelect(row.getAttribute("data-task"), false);
+    });
+    $("ganttZoomIn").addEventListener("click", () => {
+      ganttZoomMult = Math.min(10, ganttZoomMult * 1.5);
+      if (model) busy("Zooming…", renderGantt);
+    });
+    $("ganttZoomOut").addEventListener("click", () => {
+      ganttZoomMult = Math.max(0.2, ganttZoomMult / 1.5);
+      if (model) busy("Zooming…", renderGantt);
+    });
+
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
                       "floatThreshold", "excludeMilestones", "durScale"]) {
       $(id).addEventListener("change", () => {
         if (!model) return;
         pushUndo();
         syncDurControl(); // duration bars grey out in logic-flow layout
-        if (lastView.type) busy("Updating view…", rerenderLastView);
-        else commitState();
+        if (activeTab === "gantt") {
+          networkStale = true; // network re-renders when tabbed back
+          busy("Updating Gantt…", renderGantt);
+        } else if (lastView.type) {
+          busy("Updating view…", rerenderLastView);
+        } else {
+          commitState();
+        }
       });
     }
 
