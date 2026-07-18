@@ -1231,24 +1231,40 @@
       return;
     }
     const groups = cy.nodes(".wbsnode");
+    const wrapW = $("graphWrap").clientWidth;
+    const wrapH = $("graphWrap").clientHeight;
+    // chips scale with the diagram so they always stay in proportion to the
+    // boxes; below ~7px they are unclickable dust, so hide them entirely
+    const zoom = cy.zoom();
+    const s = Math.round(19 * zoom * 10) / 10;
+    if (s < 7) {
+      wrap.innerHTML = "";
+      return;
+    }
+    const chipStyle =
+      "width:" + s + "px;height:" + s + "px;font-size:" + (13 * zoom).toFixed(1) +
+      "px;line-height:" + (s - 3).toFixed(1) + "px;";
     let html = "";
     groups.forEach((n) => {
-      const rw = n.renderedWidth();
-      if (rw < 46) return; // too small at this zoom to host buttons
       const rp = n.renderedPosition();
-      const topY = rp.y - n.renderedHeight() / 2 - 9;
+      if (rp.x < -40 || rp.x > wrapW + 40 || rp.y < -40 || rp.y > wrapH + 40) {
+        return; // off-screen
+      }
+      const rw = n.renderedWidth();
+      const rh = n.renderedHeight();
+      const topY = rp.y - rh / 2 - s / 2;
       const wbsId = n.id().slice(2);
       html +=
         '<button class="node-chip expand" data-exp="' + escapeHtml(wbsId) +
-        '" title="Expand into the next WBS level" style="left:' +
-        (rp.x + rw / 2 - 10) + "px;top:" + topY + 'px">+</button>';
+        '" title="Expand into the next WBS level" style="' + chipStyle + "left:" +
+        (rp.x + rw / 2 - s * 0.55) + "px;top:" + topY + 'px">+</button>';
       const parent = (model.wbs.get(wbsId) || {}).parentId;
       if (parent && wbsExpanded.has(parent)) {
         html +=
           '<button class="node-chip collapse" data-col="' + escapeHtml(parent) +
           '" data-node="' + escapeHtml(n.id()) +
-          '" title="Collapse back up a level" style="left:' +
-          (rp.x + rw / 2 - 32) + "px;top:" + topY + 'px">−</button>';
+          '" title="Collapse back up a level" style="' + chipStyle + "left:" +
+          (rp.x + rw / 2 - s * 0.55 - s - 2 * zoom) + "px;top:" + topY + 'px">−</button>';
       }
     });
     wrap.innerHTML = html;
