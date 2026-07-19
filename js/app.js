@@ -1510,54 +1510,112 @@
     const px = Math.min(8, Math.max(0.4, 1300 / days)) * ganttZoomMult;
     const trackW = Math.ceil(days * px) + 120;
 
-    // group rows by discipline, in schedule order, tasks by start date
-    const byDisc = new Map();
+    // hierarchical WBS rows, sharing wbsExpanded with the network view so
+    // groups opened in one view are open in the other
+    const tasksByWbs = new Map();
     for (const t of list) {
-      const k = t.discipline || "(no WBS)";
-      if (!byDisc.has(k)) byDisc.set(k, []);
-      byDisc.get(k).push(t);
+      if (!tasksByWbs.has(t.wbsId)) tasksByWbs.set(t.wbsId, []);
+      tasksByWbs.get(t.wbsId).push(t);
     }
-    const order = model.disciplines.map((d) => d.name).filter((n) => byDisc.has(n));
-    for (const k of byDisc.keys()) if (!order.includes(k)) order.push(k);
+    // per-WBS subtree aggregates (filtered): count, critical count, date span
+    const agg = new Map();
+    const calcAgg = (id) => {
+      let c = 0, cr = 0, mn = Infinity, mx = -Infinity;
+      for (const t of tasksByWbs.get(id) || []) {
+        c++;
+        if (isCriticalTask(t)) cr++;
+        const s = t.start.getTime();
+        const f = (t.finish || t.start).getTime();
+        if (s < mn) mn = s;
+        if (f > mx) mx = f;
+      }
+      for (const k of wbsTree.children.get(id) || []) {
+        const a = calcAgg(k);
+        c += a.c;
+        cr += a.cr;
+        if (a.mn < mn) mn = a.mn;
+        if (a.mx > mx) mx = a.mx;
+      }
+      const a = { c, cr, mn, mx };
+      agg.set(id, a);
+      return a;
+    };
+    for (const r of wbsTree.roots) calcAgg(r);
+
+    const wbsDisc = (id) => { // level-1 ancestor's name (for colour)
+      let cur = id, guard = 0;
+      while (cur && model.wbs.has(cur) && guard++ < 60) {
+        if (wbsTree.depths.get(cur) === 1) return model.wbs.get(cur).name;
+        cur = model.wbs.get(cur).parentId;
+      }
+      return "";
+    };
 
     const geom = new Map();
     let html = "";
     let y = 0;
-    for (const gname of order) {
-      const base = disciplineColour.get(gname) || NEUTRAL_SERIES;
-      html +=
-        '<div class="g-row g-head"><div class="g-label" style="box-shadow: inset 4px 0 0 ' +
-        base + '">' + escapeHtml(gname) +
-        '</div><div class="g-track" style="width:' + trackW + 'px"></div></div>';
-      y += G_ROW_H;
-      const items = byDisc.get(gname).sort((a, b) => a.start - b.start);
-      for (const t of items) {
-        const x = ((t.start.getTime() - min) / 86400000) * px;
-        const w = Math.max((((t.finish || t.start).getTime() - t.start.getTime()) / 86400000) * px, 2);
-        const col = colourFor(t.discipline, wbsTree.depths.get(t.wbsId) || 3);
-        const crit = isCriticalTask(t);
-        let bar;
-        if (t.isMilestone) {
-          bar =
-            '<div class="g-ms' + (crit ? " crit" : "") + '" style="left:' +
-            (x - 5).toFixed(1) + "px;background:" + col.bd + '"></div>';
-          geom.set(t.id, { x, w: 0, y: y + G_ROW_H / 2 });
-        } else {
-          bar =
-            '<div class="g-bar' + (crit ? " crit" : "") +
-            (t.status === "TK_Complete" ? " done" : "") + '" style="left:' +
-            x.toFixed(1) + "px;width:" + w.toFixed(1) + "px;background:" + col.bg +
-            ";border-color:" + (crit ? CRITICAL_RED : col.bd) + '"></div>';
-          geom.set(t.id, { x, w, y: y + G_ROW_H / 2 });
-        }
-        html +=
-          '<div class="g-row g-task" data-task="' + escapeHtml(t.id) +
-          '"><div class="g-label" title="' + escapeHtml(t.code + " " + t.name) +
-          '"><span class="g-code">' + escapeHtml(t.code) + "</span> " +
-          escapeHtml(t.name) + '</div><div class="g-track" style="width:' +
-          trackW + 'px">' + bar + "</div></div>";
-        y += G_ROW_H;
+
+    const emitTask = (t, depth) => {
+      const x = ((t.start.getTime() - min) / 86400000) * px;
+      const w = Math.max((((t.finish || t.start).getTime() - t.start.getTime()) / 86400000) * px, 2);
+      const col = colourFor(t.discipline, wbsTree.depths.get(t.wbsId) || 3);
+      const crit = isCriticalTask(t);
+      let bar;
+      if (t.isMilestone) {
+        bar =
+          '<div class="g-ms' + (crit ? " crit" : "") + '" style="left:' +
+          (x - 5).toFixed(1) + "px;background:" + col.bd + '"></div>';
+        geom.set(t.id, { x, w: 0, y: y + G_ROW_H / 2 });
+      } else {
+        bar =
+          '<div class="g-bar' + (crit ? " crit" : "") +
+          (t.status === "TK_Complete" ? " done" : "") + '" style="left:' +
+          x.toFixed(1) + "px;width:" + w.toFixed(1) + "px;background:" + col.bg +
+          ";border-color:" + (crit ? CRITICAL_RED : col.bd) + '"></div>';
+        geom.set(t.id, { x, w, y: y + G_ROW_H / 2 });
       }
+      html +=
+        '<div class="g-row g-task" data-task="' + escapeHtml(t.id) +
+        '"><div class="g-label" style="padding-left:' + (8 + depth * 14) +
+        'px" title="' + escapeHtml(t.code + " " + t.name) +
+        '"><span class="g-code">' + escapeHtml(t.code) + "</span> " +
+        escapeHtml(t.name) + '</div><div class="g-track" style="width:' +
+        trackW + 'px">' + bar + "</div></div>";
+      y += G_ROW_H;
+    };
+
+    const emitGroup = (id, depth) => {
+      const a = agg.get(id);
+      if (!a || !a.c) return; // nothing beneath after filtering
+      const w = model.wbs.get(id);
+      const expanded = wbsExpanded.has(id);
+      const col = colourFor(wbsDisc(id), depth);
+      const x = ((a.mn - min) / 86400000) * px;
+      const bw = Math.max(((a.mx - a.mn) / 86400000) * px, 2);
+      html +=
+        '<div class="g-row g-group" data-wbs="' + escapeHtml(id) +
+        '"><div class="g-label" style="padding-left:' + (8 + (depth - 1) * 14) + "px" +
+        (depth === 1
+          ? ";box-shadow: inset 4px 0 0 " + (disciplineColour.get(w.name) || NEUTRAL_SERIES)
+          : "") +
+        '"><span class="g-arrow">' + (expanded ? "▾" : "▸") + "</span>" +
+        escapeHtml(w.name) + ' <span class="g-count">' + a.c +
+        (a.cr ? " · " + a.cr + " crit" : "") + "</span></div>" +
+        '<div class="g-track" style="width:' + trackW + 'px">' +
+        '<div class="g-sum' + (a.cr ? " crit" : "") + '" style="left:' + x.toFixed(1) +
+        "px;width:" + bw.toFixed(1) + "px;background:" + col.bd + '"></div></div></div>';
+      y += G_ROW_H;
+      if (expanded) {
+        for (const k of wbsTree.children.get(id) || []) emitGroup(k, depth + 1);
+        const own = (tasksByWbs.get(id) || []).slice().sort((t1, t2) => t1.start - t2.start);
+        for (const t of own) emitTask(t, depth);
+      }
+    };
+
+    for (const r of wbsTree.roots) {
+      for (const k of wbsTree.children.get(r) || []) emitGroup(k, 1);
+      const rootTasks = (tasksByWbs.get(r) || []).slice().sort((t1, t2) => t1.start - t2.start);
+      for (const t of rootTasks) emitTask(t, 1);
     }
     host.innerHTML = html;
     ganttGeom = { geom, min, px, trackW, height: y, grid: "" };
@@ -1667,9 +1725,32 @@
     mark(ganttSel, "sel");
   }
 
+  /** Add every WBS ancestor of `wbsId` (and itself) to the expanded set. */
+  function ganttOpenPath(wbsId) {
+    let changed = false;
+    let cur = wbsId;
+    let guard = 0;
+    while (cur && model.wbs.has(cur) && guard++ < 60) {
+      if ((wbsTree.depths.get(cur) || 0) >= 1 && !wbsExpanded.has(cur)) {
+        wbsExpanded.add(cur);
+        changed = true;
+      }
+      cur = model.wbs.get(cur).parentId;
+    }
+    return changed;
+  }
+
   function ganttSelect(id, scrollTo) {
     if (!model || !model.tasks.has(id)) return;
     ganttSel = id;
+    // target hidden inside a collapsed group? open the path down to it
+    if (scrollTo && ganttGeom && !ganttGeom.geom.has(id)) {
+      pushUndo();
+      if (ganttOpenPath(model.tasks.get(id).wbsId)) {
+        networkStale = true;
+        renderGantt();
+      }
+    }
     ganttApplySelection();
     drawGanttLinks();
     showDetails(id);
@@ -1683,15 +1764,15 @@
   }
 
   function ganttScrollToWbs(wbsId) {
-    if (!ganttGeom) return;
-    const inSubtree = wbsDescendants(wbsId);
-    for (const row of $("ganttRows").querySelectorAll(".g-task")) {
-      const t = model.tasks.get(row.getAttribute("data-task"));
-      if (t && inSubtree.has(t.wbsId)) {
-        row.scrollIntoView({ block: "center" });
-        return;
-      }
+    if (!ganttGeom || !model.wbs.has(wbsId)) return;
+    // open this branch (and the way to it), then scroll to its group row
+    pushUndo();
+    if (ganttOpenPath(wbsId)) {
+      networkStale = true;
+      renderGantt();
     }
+    const row = $("ganttRows").querySelector('.g-group[data-wbs="' + CSS.escape(wbsId) + '"]');
+    if (row) row.scrollIntoView({ block: "center" });
   }
 
   function switchTab(tab) {
@@ -2040,8 +2121,19 @@
       b.addEventListener("click", () => switchTab(b.dataset.tab));
     }
 
-    // gantt interactions: click a row/bar to select and show its logic
+    // gantt interactions: click a WBS row to open/close it, a bar to select
     $("ganttRows").addEventListener("click", (e) => {
+      const grp = e.target.closest(".g-row.g-group");
+      if (grp) {
+        const id = grp.getAttribute("data-wbs");
+        pushUndo();
+        const opening = !wbsExpanded.has(id);
+        if (opening) wbsExpanded.add(id);
+        else wbsExpanded.delete(id);
+        networkStale = true; // network WBS roll-up shares this state
+        busy(opening ? "Expanding…" : "Collapsing…", renderGantt);
+        return;
+      }
       const row = e.target.closest(".g-row.g-task");
       if (row) ganttSelect(row.getAttribute("data-task"), false);
     });
