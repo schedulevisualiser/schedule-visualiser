@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=19">
+  <link rel="stylesheet" href="css/style.css?v=20">
 </head>
 <body>
   <div id="app">
@@ -133,6 +133,9 @@
 
     <div id="ganttWrap">
       <div id="ganttToolbar">
+        <select id="ganttLevelSelect" title="Open every WBS group down to this level"></select>
+        <button class="btn" id="ganttCritBtn" title="Show critical path activities only">Critical only</button>
+        <button class="btn" id="ganttMsBtn" title="Hide milestones">Hide milestones</button>
         <button class="btn" id="ganttZoomOut" title="Zoom out (more time on screen)">−</button>
         <button class="btn" id="ganttZoomIn" title="Zoom in (more detail)">+</button>
       </div>
@@ -158,8 +161,8 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=19"></script>
-  <script src="js/xer-parser.js?v=19"></script>
-  <script src="js/app.js?v=19"></script>
+  <script src="js/sample-data.js?v=20"></script>
+  <script src="js/xer-parser.js?v=20"></script>
+  <script src="js/app.js?v=20"></script>
 </body>
 </html>

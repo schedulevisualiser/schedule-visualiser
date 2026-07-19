@@ -660,7 +660,13 @@ h2.section {
   flex-direction: column;
   background: var(--panel);
   min-height: 0;
+  /* stop the wide timeline forcing the whole page wider - scrolling
+     happens inside #ganttScroll, never on the page */
+  min-width: 0;
+  overflow: hidden;
 }
+
+#ganttScroll { min-width: 0; }
 
 #ganttToolbar {
   position: absolute;

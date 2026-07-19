@@ -421,6 +421,9 @@
       }
       lvl.appendChild(new Option("All tasks (no grouping)", 99));
       lvl.value = "1";
+      const glvl = $("ganttLevelSelect");
+      glvl.innerHTML = lvl.innerHTML; // same levels in the Gantt toolbar
+      glvl.value = "1";
       wbsExpanded.clear();
       if (wbsMode) setUniformWbsLevel(1);
 
@@ -1493,6 +1496,9 @@
 
   function renderGantt() {
     if (!model) return;
+    // toolbar toggles mirror the shared filter checkboxes
+    $("ganttCritBtn").classList.toggle("active", $("criticalOnly").checked);
+    $("ganttMsBtn").classList.toggle("active", $("excludeMilestones").checked);
     const list = ganttTasks();
     $("ganttEmpty").style.display = list.length ? "none" : "flex";
     const host = $("ganttRows");
@@ -2177,8 +2183,25 @@
       if (!model) return;
       pushUndo();
       setUniformWbsLevel(parseInt(e.target.value, 10) || 1);
+      $("ganttLevelSelect").value = e.target.value; // keep the two in step
       if (wbsMode && lastView.type) busy("Updating view…", rerenderLastView);
       else commitState();
+    });
+
+    // Gantt toolbar: WBS level + filters (shared state with the network view)
+    $("ganttLevelSelect").addEventListener("change", (e) => {
+      if (!model) return;
+      pushUndo();
+      setUniformWbsLevel(parseInt(e.target.value, 10) || 1);
+      $("wbsLevelSelect").value = e.target.value;
+      networkStale = true;
+      busy("Updating Gantt…", renderGantt);
+    });
+    $("ganttCritBtn").addEventListener("click", () => {
+      if (model) $("criticalOnly").click(); // existing handler re-renders + undo
+    });
+    $("ganttMsBtn").addEventListener("click", () => {
+      if (model) $("excludeMilestones").click();
     });
 
     $("projectSelect").addEventListener("change", (e) => {
