@@ -1783,6 +1783,9 @@
     }
     $("graphWrap").style.display = tab === "network" ? "" : "none";
     $("ganttWrap").style.display = tab === "gantt" ? "flex" : "none";
+    // network-only sidebar sections (the Gantt has its own WBS rows)
+    $("wbsSection").style.display = tab === "network" ? "" : "none";
+    $("viewOptionsSection").style.display = tab === "network" ? "" : "none";
     if (tab === "gantt") {
       if (model) busy("Building Gantt chart…", renderGantt);
     } else if (networkStale && model && lastView.type) {
