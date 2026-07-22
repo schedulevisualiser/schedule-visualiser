@@ -681,7 +681,7 @@
 
   // ---------- Rendering ----------
   function taskToNode(task, widths) {
-    const label = task.code + "\n" + task.name;
+    const label = task.name; // activity IDs live in the details panel, not the diagram
     const classes = [];
     if (isCriticalTask(task)) classes.push("critical");
     if (task.isMilestone) classes.push("milestone");
@@ -1484,8 +1484,15 @@
   let ganttSel = null;       // selected activity id in the Gantt
   let ganttGeom = null;      // { geom:Map(id->{x,w,y}), min, px, trackW, height, grid }
   const G_LABEL_W = 300;
+  const G_DATE_W = 68;
+  const G_FROZEN_W = G_LABEL_W + 2 * G_DATE_W; // label + start + finish columns
   const G_ROW_H = 24;
   const G_SCALE_H = 30;
+
+  function fmtShort(d) {
+    if (!d) return "—";
+    return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "2-digit" });
+  }
 
   function ganttTasks() {
     let list = visibleTasks().filter((t) => t.start);
@@ -1496,9 +1503,6 @@
 
   function renderGantt() {
     if (!model) return;
-    // toolbar toggles mirror the shared filter checkboxes
-    $("ganttCritBtn").classList.toggle("active", $("criticalOnly").checked);
-    $("ganttMsBtn").classList.toggle("active", $("excludeMilestones").checked);
     const list = ganttTasks();
     $("ganttEmpty").style.display = list.length ? "none" : "flex";
     const host = $("ganttRows");
@@ -1583,9 +1587,11 @@
       html +=
         '<div class="g-row g-task" data-task="' + escapeHtml(t.id) +
         '"><div class="g-label" style="padding-left:' + (8 + depth * 14) +
-        'px" title="' + escapeHtml(t.code + " " + t.name) +
-        '"><span class="g-code">' + escapeHtml(t.code) + "</span> " +
-        escapeHtml(t.name) + '</div><div class="g-track" style="width:' +
+        'px" title="' + escapeHtml(t.code + " " + t.name) + '">' +
+        escapeHtml(t.name) +
+        '</div><div class="g-date">' + fmtShort(t.start) +
+        '</div><div class="g-date">' + fmtShort(t.finish) +
+        '</div><div class="g-track" style="width:' +
         trackW + 'px">' + bar + "</div></div>";
       y += G_ROW_H;
     };
@@ -1607,6 +1613,8 @@
         '"><span class="g-arrow">' + (expanded ? "▾" : "▸") + "</span>" +
         escapeHtml(w.name) + ' <span class="g-count">' + a.c +
         (a.cr ? " · " + a.cr + " crit" : "") + "</span></div>" +
+        '<div class="g-date">' + fmtShort(new Date(a.mn)) +
+        '</div><div class="g-date">' + fmtShort(new Date(a.mx)) + "</div>" +
         '<div class="g-track" style="width:' + trackW + 'px">' +
         '<div class="g-sum' + (a.cr ? " crit" : "") + '" style="left:' + x.toFixed(1) +
         "px;width:" + bw.toFixed(1) + "px;background:" + col.bd + '"></div></div></div>';
@@ -1659,7 +1667,7 @@
     ganttGeom.grid = grid;
 
     const svg = $("ganttSvg");
-    svg.style.left = G_LABEL_W + "px";
+    svg.style.left = G_FROZEN_W + "px";
     svg.style.top = G_SCALE_H + "px";
     svg.setAttribute("width", trackW);
     svg.setAttribute("height", height);
@@ -1668,7 +1676,7 @@
     if (model.dataDate) {
       const x = ((model.dataDate.getTime() - min) / 86400000) * px;
       dd.style.display = "";
-      dd.style.left = (G_LABEL_W + x).toFixed(1) + "px";
+      dd.style.left = (G_FROZEN_W + x).toFixed(1) + "px";
       dd.style.height = G_SCALE_H + height + "px";
     } else {
       dd.style.display = "none";
@@ -1765,7 +1773,7 @@
       if (row) row.scrollIntoView({ block: "center" });
       const sc = $("ganttScroll");
       const g = ganttGeom.geom.get(id);
-      sc.scrollLeft = Math.max(0, g.x - (sc.clientWidth - G_LABEL_W) / 2 + 60);
+      sc.scrollLeft = Math.max(0, g.x - (sc.clientWidth - G_FROZEN_W) / 2 + 60);
     }
   }
 
@@ -1789,9 +1797,12 @@
     }
     $("graphWrap").style.display = tab === "network" ? "" : "none";
     $("ganttWrap").style.display = tab === "gantt" ? "flex" : "none";
-    // network-only sidebar sections (the Gantt has its own WBS rows)
+    // the WBS tree is network-only (the Gantt has its own WBS rows); the
+    // View options panel stays, minus the controls that don't apply there
     $("wbsSection").style.display = tab === "network" ? "" : "none";
-    $("viewOptionsSection").style.display = tab === "network" ? "" : "none";
+    for (const el of document.querySelectorAll(".net-only")) {
+      el.style.display = tab === "network" ? "" : "none";
+    }
     if (tab === "gantt") {
       if (model) busy("Building Gantt chart…", renderGantt);
     } else if (networkStale && model && lastView.type) {
@@ -2196,12 +2207,6 @@
       $("wbsLevelSelect").value = e.target.value;
       networkStale = true;
       busy("Updating Gantt…", renderGantt);
-    });
-    $("ganttCritBtn").addEventListener("click", () => {
-      if (model) $("criticalOnly").click(); // existing handler re-renders + undo
-    });
-    $("ganttMsBtn").addEventListener("click", () => {
-      if (model) $("excludeMilestones").click();
     });
 
     $("projectSelect").addEventListener("change", (e) => {

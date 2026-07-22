@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=20">
+  <link rel="stylesheet" href="css/style.css?v=21">
 </head>
 <body>
   <div id="app">
@@ -39,21 +39,21 @@
       <div id="viewOptionsSection">
         <h2 class="section">View options</h2>
         <div class="options" style="margin-top:8px">
-          <label for="layoutSelect">Layout</label>
-          <select id="layoutSelect" disabled>
+          <label for="layoutSelect" class="net-only">Layout</label>
+          <select id="layoutSelect" class="net-only" disabled>
             <option value="time">Time order (left → right)</option>
             <option value="logic">Logic flow</option>
           </select>
 
-          <label for="directionSelect">Direction</label>
-          <select id="directionSelect" disabled>
+          <label for="directionSelect" class="net-only">Direction</label>
+          <select id="directionSelect" class="net-only" disabled>
             <option value="both">Predecessors + successors</option>
             <option value="pred">Predecessors only</option>
             <option value="succ">Successors only</option>
           </select>
 
-          <label for="depthSelect">Depth</label>
-          <select id="depthSelect" disabled>
+          <label for="depthSelect" class="net-only">Depth</label>
+          <select id="depthSelect" class="net-only" disabled>
             <option value="all">Full chain</option>
             <option value="1">1 level</option>
             <option value="2">2 levels</option>
@@ -74,7 +74,7 @@
             <label for="excludeMilestones" title="Hide milestones; their predecessors connect straight to their successors (dashed edges) so chains stay intact">Exclude milestones</label>
           </div>
 
-          <div class="check-row">
+          <div class="check-row net-only">
             <input type="checkbox" id="durScale" disabled>
             <label for="durScale" title="Each bar spans its start to finish date on the time axis (time layout only)">Duration bars</label>
           </div>
@@ -134,14 +134,14 @@
     <div id="ganttWrap">
       <div id="ganttToolbar">
         <select id="ganttLevelSelect" title="Open every WBS group down to this level"></select>
-        <button class="btn" id="ganttCritBtn" title="Show critical path activities only">Critical only</button>
-        <button class="btn" id="ganttMsBtn" title="Hide milestones">Hide milestones</button>
         <button class="btn" id="ganttZoomOut" title="Zoom out (more time on screen)">−</button>
         <button class="btn" id="ganttZoomIn" title="Zoom in (more detail)">+</button>
       </div>
       <div id="ganttScroll">
         <div class="g-row g-scale">
           <div class="g-label g-corner">Activity</div>
+          <div class="g-date g-corner">Start</div>
+          <div class="g-date g-corner">Finish</div>
           <div class="g-track" id="ganttScaleTrack"></div>
         </div>
         <div id="ganttRows"></div>
@@ -161,8 +161,8 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=20"></script>
-  <script src="js/xer-parser.js?v=20"></script>
-  <script src="js/app.js?v=20"></script>
+  <script src="js/sample-data.js?v=21"></script>
+  <script src="js/xer-parser.js?v=21"></script>
+  <script src="js/app.js?v=21"></script>
 </body>
 </html>
