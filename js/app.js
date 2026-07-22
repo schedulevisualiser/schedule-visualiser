@@ -1913,6 +1913,10 @@
         cy.nodes().removeClass("selected");
       }
     });
+    // right-click means "collapse" on the diagram - keep the browser's own
+    // context menu out of the way
+    $("graph").addEventListener("contextmenu", (e) => e.preventDefault());
+
     cy.on("dbltap", "node", (evt) => {
       const id = evt.target.id();
       if (!model) return;
