@@ -442,6 +442,7 @@
       // Default view: whole schedule rolled up to WBS level 1 (disciplines),
       // in time order - a readable overview no matter the schedule size.
       $("layoutSelect").value = "time";
+      $("durScale").checked = true; // time order defaults to duration bars
       $("wbsLevelSelect").value = "1";
       toggleWbsMode(true);
       renderFullNetwork();
@@ -2172,6 +2173,9 @@
         if (!model) return;
         pushUndo();
         syncDurControl(); // duration bars grey out in logic-flow layout
+        if (id === "layoutSelect" && layoutMode() === "time") {
+          $("durScale").checked = true; // time order defaults to duration bars
+        }
         if (activeTab === "gantt") {
           networkStale = true; // network re-renders when tabbed back
           busy("Updating Gantt…", renderGantt);
