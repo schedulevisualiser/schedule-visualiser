@@ -1914,8 +1914,9 @@
       }
     });
     // right-click means "collapse" on the diagram - keep the browser's own
-    // context menu out of the way
-    $("graph").addEventListener("contextmenu", (e) => e.preventDefault());
+    // context menu out of the way. Listen on the whole wrapper, because the
+    // ruler, gridlines, chips and legend sit as layers above the canvas.
+    $("graphWrap").addEventListener("contextmenu", (e) => e.preventDefault());
 
     cy.on("dbltap", "node", (evt) => {
       const id = evt.target.id();
