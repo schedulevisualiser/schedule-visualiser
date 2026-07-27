@@ -122,6 +122,55 @@
     return $("durScale").checked && !$("durScale").disabled;
   }
 
+  function drivingOnly() {
+    return $("drivingOnly").checked;
+  }
+
+  // ---------- Driving relationships ----------
+  // A link is "driving" when the predecessor is actually holding the
+  // successor back: the controlling date lands on the successor's date with
+  // no slack. Gaps are measured in working days so a Friday->Monday hand-off
+  // still counts as driving.
+  const DRIVE_TOLERANCE_DAYS = 1;
+
+  function workdayGap(from, to) {
+    if (!from || !to) return null;
+    const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const a = day(from);
+    const b = day(to);
+    const sign = b >= a ? 1 : -1;
+    const lo = sign > 0 ? a : b;
+    const hi = sign > 0 ? b : a;
+    let n = 0;
+    const cur = new Date(lo);
+    cur.setDate(cur.getDate() + 1);
+    let guard = 0;
+    while (cur < hi && guard++ < 4000) {
+      const wd = cur.getDay();
+      if (wd !== 0 && wd !== 6) n++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return sign * n;
+  }
+
+  /** Flag every link as driving / not driving. Run once per loaded file. */
+  function computeDrivingLinks() {
+    for (const link of model.links) {
+      const p = model.tasks.get(link.predId);
+      const s = model.tasks.get(link.succId);
+      const t = link.typeLabel;
+      // which end of each activity the relationship controls
+      const from = t === "FS" || t === "FF" ? p.finish : p.start;
+      const to = t === "FF" || t === "SF" ? s.finish : s.start;
+      const gap = workdayGap(from, to);
+      link.driving = gap === null ? false : gap - (link.lagDays || 0) <= DRIVE_TOLERANCE_DAYS;
+    }
+  }
+
+  function linkPasses(link) {
+    return !drivingOnly() || link.driving;
+  }
+
   // duration bars only make sense when x = time
   function syncDurControl() {
     $("durScale").disabled = !model || layoutMode() !== "time";
@@ -262,6 +311,7 @@
       depth: $("depthSelect").value,
       criticalOnly: $("criticalOnly").checked,
       floatThreshold: $("floatThreshold").value,
+      drivingOnly: $("drivingOnly").checked,
       excludeMs: $("excludeMilestones").checked,
       viewport: cy ? { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } } : null,
     };
@@ -289,6 +339,9 @@
     const chips = [];
     if (criticalOnly()) {
       chips.push({ label: "Critical only (float ≤ " + floatThreshold() + "d)", control: "criticalOnly" });
+    }
+    if (drivingOnly()) {
+      chips.push({ label: "Driving path only", control: "drivingOnly" });
     }
     if (excludeMilestones()) {
       chips.push({ label: "Milestones hidden", control: "excludeMilestones" });
@@ -358,6 +411,7 @@
     $("depthSelect").value = s.depth;
     $("criticalOnly").checked = s.criticalOnly;
     $("floatThreshold").value = s.floatThreshold;
+    $("drivingOnly").checked = !!s.drivingOnly;
     $("excludeMilestones").checked = !!s.excludeMs;
     selectedProjId = s.selectedProjId;
     if ($("projectSelect").options.length) $("projectSelect").value = s.selectedProjId;
@@ -430,6 +484,7 @@
       buildWbsTreeDom();
       assignDisciplineColours();
       buildLegend();
+      computeDrivingLinks();
 
       // WBS-mode roll-up level selector (level 1 = disciplines)
       const lvl = $("wbsLevelSelect");
@@ -449,7 +504,7 @@
       $("searchInput").disabled = false;
       $("dropHint").style.display = "none";
       for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
-                        "floatThreshold", "excludeMilestones", "wbsModeBtn",
+                        "floatThreshold", "drivingOnly", "excludeMilestones", "wbsModeBtn",
                         "fullNetworkBtn", "fitBtn"]) {
         $(id).disabled = false;
       }
@@ -673,6 +728,7 @@
           const task = model.tasks.get(id);
           const edges = dir === "up" ? task.predecessors : task.successors;
           for (const link of edges) {
+            if (!linkPasses(link)) continue; // driving-path filter
             const otherId = dir === "up" ? link.predId : link.succId;
             const other = model.tasks.get(otherId);
             if (critOnly && !isCriticalTask(other)) continue;
@@ -693,6 +749,7 @@
     // include every link whose two ends are both in the set
     const linkIds = new Set();
     for (const link of model.links) {
+      if (!linkPasses(link)) continue;
       if (nodeIds.has(link.predId) && nodeIds.has(link.succId)) linkIds.add(link.id);
     }
     return { nodeIds, linkIds };
@@ -1332,8 +1389,10 @@
       let rel = link.typeLabel;
       if (link.lagDays) rel += (link.lagDays > 0 ? "+" : "") + fmtDays(link.lagDays);
       return (
-        '<li class="rel-item' + crit + '" data-task="' + escapeHtml(otherId) + '">' +
+        '<li class="rel-item' + crit + (link.driving ? " driving" : "") +
+        '" data-task="' + escapeHtml(otherId) + '">' +
         '<span class="rel-type">' + rel + "</span>" +
+        (link.driving ? '<span class="drive-dot" title="Driving: this controls the date">▶</span>' : "") +
         "<strong>" + escapeHtml(other.code) + "</strong> " +
         escapeHtml(other.name) + "</li>"
       );
@@ -1731,8 +1790,8 @@
             (incoming ? "P" : "S") + ')"/>';
         };
         const t = model.tasks.get(ganttSel);
-        for (const l of t.predecessors) draw(l, true);
-        for (const l of t.successors) draw(l, false);
+        for (const l of t.predecessors) if (linkPasses(l)) draw(l, true);
+        for (const l of t.successors) if (linkPasses(l)) draw(l, false);
       }
     }
     svg.innerHTML =
@@ -1753,8 +1812,8 @@
       if (row) row.classList.add(cls);
     };
     const t = model.tasks.get(ganttSel);
-    for (const l of t.predecessors) mark(l.predId, "pred");
-    for (const l of t.successors) mark(l.succId, "succ");
+    for (const l of t.predecessors) if (linkPasses(l)) mark(l.predId, "pred");
+    for (const l of t.successors) if (linkPasses(l)) mark(l.succId, "succ");
     mark(ganttSel, "sel");
   }
 
@@ -2187,7 +2246,7 @@
     });
 
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
-                      "floatThreshold", "excludeMilestones", "durScale"]) {
+                      "floatThreshold", "drivingOnly", "excludeMilestones", "durScale"]) {
       $(id).addEventListener("change", () => {
         if (!model) return;
         pushUndo();

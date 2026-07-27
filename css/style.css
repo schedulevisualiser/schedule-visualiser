@@ -366,6 +366,16 @@ h2.section {
 .rel-item:hover { border-color: var(--accent); background: #eef3fa; }
 .rel-item.crit { border-left: 3px solid var(--critical); }
 
+/* relationships that actually control the date */
+.rel-item.driving { background: rgba(42, 120, 214, 0.06); }
+
+.drive-dot {
+  color: var(--accent);
+  font-size: 9px;
+  margin-right: 4px;
+  vertical-align: 1px;
+}
+
 .rel-type {
   float: right;
   color: var(--faint);
