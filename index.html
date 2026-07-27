@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>P6 Visualiser — Network Diagram Explorer</title>
+  <title>Schedule Visualiser</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
   <div id="app">
     <header>
-      <h1>P6 <span>Visualiser</span></h1>
+      <h1>Schedule <span>Visualiser</span></h1>
       <button class="btn primary" onclick="document.getElementById('fileInput').click()">Open .xer file</button>
       <input type="file" id="fileInput" accept=".xer,.XER,.txt" style="display:none">
       <select id="projectSelect" style="display:none"></select>
       <div class="spacer"></div>
     </header>
 
-    <div id="statusBar">No schedule loaded — open a Primavera P6 .xer export, or drag one onto the page.</div>
+    <div id="statusBar">No schedule loaded — open an .xer schedule export, or drag one onto the page.</div>
 
     <aside id="sidebar">
       <div>
@@ -110,7 +110,7 @@
       <div id="nodeTooltip" style="display:none"></div>
       <div id="dropHint">
         <div class="drop-box">
-          <h2>Visualise a Primavera P6 schedule</h2>
+          <h2>Visualise a project schedule</h2>
           <p>Drag a <strong>.xer</strong> file anywhere onto this page,<br>
              or click <strong>Open .xer file</strong>.</p>
           <p class="drop-note">Files are read entirely in your browser — nothing is uploaded anywhere.</p>
@@ -167,7 +167,7 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/xer-parser.js?v=27"></script>
-  <script src="js/app.js?v=27"></script>
+  <script src="js/xer-parser.js?v=28"></script>
+  <script src="js/app.js?v=28"></script>
 </body>
 </html>

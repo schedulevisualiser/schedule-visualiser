@@ -1,4 +1,4 @@
-"""Generate a sample Primavera P6 .xer file with internally consistent CPM dates.
+"""Generate a sample .xer schedule file with internally consistent CPM dates.
 
 Runs a simple forward/backward pass over a demo construction schedule
 (Mon-Fri working calendar, 8h days) and writes:

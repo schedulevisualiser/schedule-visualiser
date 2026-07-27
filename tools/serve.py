@@ -1,4 +1,4 @@
-"""Local dev server for the P6 Visualiser.
+"""Local dev server for the Schedule Visualiser.
 
 Same as `python -m http.server 8642` but sends no-cache headers, so the
 browser always picks up edited files instead of silently running stale

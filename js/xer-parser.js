@@ -1,6 +1,6 @@
 /*
  * xer-parser.js
- * Parses a Primavera P6 .xer export into a JavaScript object model.
+ * Parses an .xer schedule export into a JavaScript object model.
  *
  * XER format: tab-delimited text. Lines start with a token:
  *   ERMHDR  file header
@@ -19,7 +19,7 @@
     TK_Active: "In Progress",
     TK_Complete: "Completed",
   };
-  // Keyed by UPPERCASE because some P6 exports write TT_TASK, others TT_Task.
+  // Keyed by UPPERCASE because some exports write TT_TASK, others TT_Task.
   const TYPE_LABELS = {
     TT_TASK: "Task",
     TT_MILE: "Start Milestone",
@@ -79,7 +79,7 @@
 
     if (!tables.TASK || tables.TASK.length === 0) {
       throw new Error(
-        "No TASK table found - this does not look like a valid P6 .xer export."
+        "No TASK table found - this does not look like a valid .xer schedule export."
       );
     }
 
@@ -141,7 +141,7 @@
         return n === null ? null : n / hpd;
       };
 
-      // Status-aware dates. P6 exports fill a completed activity's early
+      // Status-aware dates. Exports fill a completed activity's early
       // dates with the DATA DATE (not its real dates), so actuals must win:
       //   completed   -> actual start / actual finish
       //   in progress -> actual start / forecast (early) finish
@@ -182,7 +182,7 @@
         freeFloatDays: toDays(row.free_float_hr_cnt),
         start,
         finish,
-        // late dates are meaningless once an activity is complete (P6 fills
+        // late dates are meaningless once an activity is complete (exports fill
         // them with junk), so blank them rather than mislead
         lateStart: statusCode === "TK_Complete" ? null : parseDate(row.late_start_date),
         lateFinish: statusCode === "TK_Complete" ? null : parseDate(row.late_end_date),

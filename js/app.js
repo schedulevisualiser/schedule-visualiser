@@ -1,5 +1,5 @@
 /*
- * app.js - P6 Visualiser
+ * app.js - Schedule Visualiser
  * Wires together: file loading -> XER parsing -> search -> trace/discipline views
  * -> Cytoscape rendering.
  */
@@ -178,7 +178,7 @@
   }
 
   /**
-   * Activity names repeat constantly in P6 schedules ("End to end testing"
+   * Activity names repeat constantly in real schedules ("End to end testing"
    * appearing four times on one critical path). Where a name is unique in
    * the current view it stays clean; where it repeats, append the parent
    * WBS - or the activity ID if the WBS doesn't separate them either.
@@ -420,6 +420,21 @@
     const clearWbs = wrap.querySelector("[data-clear-wbs]");
     if (clearWbs) {
       clearWbs.addEventListener("click", () => $("fullNetworkBtn").click());
+    }
+    positionFilterChips();
+  }
+
+  // Chips sit on the toolbar row, and only drop to their own row when they
+  // would run into the toolbar buttons (narrow windows, many chips).
+  function positionFilterChips() {
+    const wrap = $("filterChips");
+    if (!wrap.innerHTML) return;
+    wrap.classList.remove("below");
+    const toolbar = $("graphToolbar").getBoundingClientRect();
+    const chips = wrap.getBoundingClientRect();
+    // scrollWidth is the natural (unclipped) width of the chip row
+    if (chips.left + wrap.scrollWidth > toolbar.left - 10) {
+      wrap.classList.add("below");
     }
   }
 
@@ -2067,6 +2082,7 @@
     window.addEventListener("resize", () => {
       updateRuler();
       scheduleNodeChips();
+      positionFilterChips();
     });
 
     // in time layouts x = date, so nodes may only be dragged vertically

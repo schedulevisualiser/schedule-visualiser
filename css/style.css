@@ -1,4 +1,4 @@
-/* P6 Visualiser - light theme */
+/* Schedule Visualiser - light theme */
 
 :root {
   --bg: #f9f9f7;        /* page plane */
@@ -519,17 +519,25 @@ h2.section {
 }
 
 /* ---------- Active filter chips ---------- */
-/* sits below the toolbar so the two can never collide on narrow laptops */
+/* shares the toolbar row; drops to its own row only when it would collide
+   (see updateFilterChips) */
 #filterChips {
   position: absolute;
-  top: 72px;
+  top: 34px;
   left: 12px;
-  right: 12px;
   z-index: 9;
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  max-width: calc(100% - 24px);
   pointer-events: none;
+}
+
+#filterChips.below {
+  top: 72px;
+  flex-wrap: wrap;
+  white-space: normal;
 }
 
 .filter-chip {
