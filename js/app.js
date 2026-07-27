@@ -303,6 +303,20 @@
           '<span class="chip-x" data-x="' + c.control + '" title="Turn this off">✕</span></span>'
       )
       .join("");
+    // viewing a single WBS branch (clicked in the sidebar tree or search)
+    if (lastView.type === "wbs" && model.wbs.has(lastView.wbsId)) {
+      html +=
+        '<span class="filter-chip">WBS: ' +
+        escapeHtml(model.wbs.get(lastView.wbsId).name) +
+        '<span class="chip-x" data-clear-wbs="1" title="Show the whole schedule again">✕</span></span>';
+    }
+    // tracing from one activity is also a kind of filter
+    if (lastView.type === "trace" && focusTaskId && model.tasks.has(focusTaskId)) {
+      html +=
+        '<span class="filter-chip">Tracing: ' +
+        escapeHtml(model.tasks.get(focusTaskId).name) +
+        '<span class="chip-x" data-clear-wbs="1" title="Show the whole schedule again">✕</span></span>';
+    }
     if (wbsMode) {
       const lv = $("wbsLevelSelect").value;
       html +=
@@ -312,6 +326,10 @@
     wrap.innerHTML = html;
     for (const x of wrap.querySelectorAll("[data-x]")) {
       x.addEventListener("click", () => $(x.getAttribute("data-x")).click());
+    }
+    const clearWbs = wrap.querySelector("[data-clear-wbs]");
+    if (clearWbs) {
+      clearWbs.addEventListener("click", () => $("fullNetworkBtn").click());
     }
   }
 
@@ -2100,10 +2118,6 @@
     $("fileInput").addEventListener("change", (e) => {
       if (e.target.files.length) loadFile(e.target.files[0]);
       e.target.value = "";
-    });
-
-    $("loadSampleBtn").addEventListener("click", () => {
-      if (window.SAMPLE_XER) loadXerText(window.SAMPLE_XER, "Sample_Project.xer");
     });
 
     $("searchInput").addEventListener("input", (e) => runSearch(e.target.value));

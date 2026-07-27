@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P6 Visualiser — Network Diagram Explorer</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=24">
+  <link rel="stylesheet" href="css/style.css?v=25">
 </head>
 <body>
   <div id="app">
@@ -13,12 +13,11 @@
       <h1>P6 <span>Visualiser</span></h1>
       <button class="btn primary" onclick="document.getElementById('fileInput').click()">Open .xer file</button>
       <input type="file" id="fileInput" accept=".xer,.XER,.txt" style="display:none">
-      <button class="btn" id="loadSampleBtn">Load sample project</button>
       <select id="projectSelect" style="display:none"></select>
       <div class="spacer"></div>
     </header>
 
-    <div id="statusBar">No schedule loaded — open a Primavera P6 .xer export, drag one onto the page, or load the sample project.</div>
+    <div id="statusBar">No schedule loaded — open a Primavera P6 .xer export, or drag one onto the page.</div>
 
     <aside id="sidebar">
       <div>
@@ -108,7 +107,7 @@
         <div class="drop-box">
           <h2>Visualise a Primavera P6 schedule</h2>
           <p>Drag a <strong>.xer</strong> file anywhere onto this page,<br>
-             click <strong>Open .xer file</strong>, or try the <strong>sample project</strong>.</p>
+             or click <strong>Open .xer file</strong>.</p>
           <p class="drop-note">Files are read entirely in your browser — nothing is uploaded anywhere.</p>
         </div>
       </div>
@@ -118,10 +117,6 @@
           <p>No activities match the current view and filters.</p>
           <button class="btn" id="emptyUndoBtn">↩ Undo last change</button>
         </div>
-      </div>
-      <div id="spinner" style="display:none">
-        <div class="wheel"></div>
-        <div id="spinnerMsg">Working…</div>
       </div>
       <div id="legend">
         <span><span class="legend-swatch crit-outline"></span>Critical</span>
@@ -156,13 +151,18 @@
       <button class="tab active" data-tab="network">Network diagram</button>
       <button class="tab" data-tab="gantt">Gantt chart</button>
     </div>
+
+    <!-- app-level so it covers whichever view is active (network or Gantt) -->
+    <div id="spinner" style="display:none">
+      <div class="wheel"></div>
+      <div id="spinnerMsg">Working…</div>
+    </div>
   </div>
 
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/sample-data.js?v=24"></script>
-  <script src="js/xer-parser.js?v=24"></script>
-  <script src="js/app.js?v=24"></script>
+  <script src="js/xer-parser.js?v=25"></script>
+  <script src="js/app.js?v=25"></script>
 </body>
 </html>
