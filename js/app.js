@@ -77,12 +77,18 @@
         );
       })
       .join("");
-    $("legend").innerHTML =
-      swatches +
+    const legend = $("legend");
+    legend.innerHTML =
+      '<button id="legendToggle" title="Show / hide the full legend">⌃</button>' +
       '<span><span class="legend-swatch crit-outline"></span>Critical</span>' +
       '<span><span class="legend-swatch diamond"></span>Milestone</span>' +
       '<span><span class="legend-swatch focus-ring"></span>Traced</span>' +
+      swatches +
       "<span>+ / double-click: expand group · − / right-click: collapse · double-click activity: trace</span>";
+    $("legendToggle").addEventListener("click", () => {
+      const open = legend.classList.toggle("open");
+      $("legendToggle").textContent = open ? "⌄" : "⌃";
+    });
   }
   // what is currently drawn, so option changes can re-render the same view
   let lastView = { type: null, wbsId: null }; // type: full | trace | wbs
@@ -169,6 +175,37 @@
 
   function linkPasses(link) {
     return !drivingOnly() || link.driving;
+  }
+
+  /**
+   * Activity names repeat constantly in P6 schedules ("End to end testing"
+   * appearing four times on one critical path). Where a name is unique in
+   * the current view it stays clean; where it repeats, append the parent
+   * WBS - or the activity ID if the WBS doesn't separate them either.
+   * Returns Map(taskId -> display label).
+   */
+  function buildLabelMap(tasks) {
+    const counts = new Map();
+    for (const t of tasks) counts.set(t.name, (counts.get(t.name) || 0) + 1);
+    const siblings = new Map();
+    for (const t of tasks) {
+      if (counts.get(t.name) > 1) {
+        if (!siblings.has(t.name)) siblings.set(t.name, []);
+        siblings.get(t.name).push(t);
+      }
+    }
+    const map = new Map();
+    for (const t of tasks) {
+      if (counts.get(t.name) === 1) {
+        map.set(t.id, t.name);
+        continue;
+      }
+      const group = siblings.get(t.name);
+      const wbsNames = new Set(group.map((s) => s.wbsName || ""));
+      const wbsSeparates = wbsNames.size === group.length && !wbsNames.has("");
+      map.set(t.id, t.name + " · " + (wbsSeparates ? t.wbsName : t.code));
+    }
+    return map;
   }
 
   // duration bars only make sense when x = time
@@ -756,8 +793,10 @@
   }
 
   // ---------- Rendering ----------
-  function taskToNode(task, widths) {
-    const label = task.name; // activity IDs live in the details panel, not the diagram
+  function taskToNode(task, widths, labelMap) {
+    // activity IDs live in the details panel, not the diagram - unless the
+    // name repeats in this view, in which case buildLabelMap disambiguates
+    const label = (labelMap && labelMap.get(task.id)) || task.name;
     const classes = [];
     if (isCriticalTask(task)) classes.push("critical");
     if (task.isMilestone) classes.push("milestone");
@@ -1120,11 +1159,12 @@
       const agg = aggregateByWbs(nodeIds, linkIds, bridges);
       const layoutItems = [...agg.groupItems, ...agg.taskItems];
       if (layoutMode() === "time") timeLayout = computeTimePositions(layoutItems);
+      const labels = buildLabelMap(agg.taskItems);
       for (const g of agg.groupItems) {
         elements.push(groupToNode(g, timeLayout && timeLayout.widths));
       }
       for (const t of agg.taskItems) {
-        elements.push(taskToNode(t, timeLayout && timeLayout.widths));
+        elements.push(taskToNode(t, timeLayout && timeLayout.widths, labels));
       }
       for (const e of agg.edges) {
         elements.push(aggEdgeToElement(e, timeLayout && timeLayout.widths));
@@ -1132,8 +1172,9 @@
     } else {
       const tasks = [...nodeIds].map((id) => model.tasks.get(id));
       if (layoutMode() === "time") timeLayout = computeTimePositions(tasks);
+      const labels = buildLabelMap(tasks);
       for (const t of tasks) {
-        elements.push(taskToNode(t, timeLayout && timeLayout.widths));
+        elements.push(taskToNode(t, timeLayout && timeLayout.widths, labels));
       }
       for (const link of model.links) {
         if (linkIds.has(link.id)) {
@@ -1640,6 +1681,7 @@
     };
 
     const geom = new Map();
+    const labels = buildLabelMap(list); // disambiguate repeated activity names
     let html = "";
     let y = 0;
 
@@ -1666,7 +1708,7 @@
         '<div class="g-row g-task" data-task="' + escapeHtml(t.id) +
         '"><div class="g-label" style="padding-left:' + (8 + depth * 14) +
         'px" title="' + escapeHtml(t.code + " " + t.name) + '">' +
-        escapeHtml(t.name) +
+        escapeHtml(labels.get(t.id) || t.name) +
         '</div><div class="g-date">' + fmtShort(t.start) +
         '</div><div class="g-date">' + fmtShort(t.finish) +
         '</div><div class="g-track" style="width:' +
