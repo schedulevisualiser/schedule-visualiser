@@ -8,12 +8,13 @@ with critical-path highlighting driven by P6's own total float values.
 
 No installation needed — it's a plain static web app:
 
-- **Easiest:** double-click `index.html` (opens in your default browser), or
+- **Easiest:** double-click `app.html` (opens in your default browser), or
 - Serve it locally: `python -m http.server 8642` in this folder, then open
-  <http://localhost:8642>
+  <http://localhost:8642> — that lands on the `index.html` landing page,
+  with the app itself at `/app.html`.
 
 When editing the CSS/JS, bump the `?v=` number on the `<link>`/`<script>`
-tags in `index.html` so browsers pick up the new files instead of cached
+tags in `app.html` so browsers pick up the new files instead of cached
 copies.
 
 Everything runs in the browser. **No schedule data ever leaves your machine** —
@@ -94,7 +95,9 @@ coloured balloon per discipline. Drill in from there, or press
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | App shell / layout |
+| `index.html` | Landing page for schedulevisualiser.com |
+| `css/home.css` | Landing-page styling (shares the app's palette) |
+| `app.html` | App shell / layout |
 | `js/xer-parser.js` | Parses the XER tables (TASK, TASKPRED, PROJECT, PROJWBS, CALENDAR) into a task/link model |
 | `js/app.js` | Search, trace traversal, details panel, Cytoscape rendering |
 | `js/sample-data.js` | Embedded demo schedule (auto-generated) |

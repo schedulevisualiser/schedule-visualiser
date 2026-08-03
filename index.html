@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedule Visualiser — see what's actually driving your project dates</title>
+  <meta name="description" content="Open a Primavera P6 .xer export in your browser and trace the logic behind any date. Built so the whole project team can interrogate the schedule, not just the planner. Nothing is uploaded.">
+  <link rel="canonical" href="https://schedulevisualiser.com/">
+  <meta property="og:title" content="Schedule Visualiser">
+  <meta property="og:description" content="Trace the logic behind any date in a P6 schedule, in your browser. No upload, no install.">
+  <meta property="og:url" content="https://schedulevisualiser.com/">
+  <meta property="og:type" content="website">
+  <!-- Inline so the favicon costs no extra request and works offline -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cg stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M9 10h5M18 10h5M9 22h5M18 22h5'/%3E%3Cpath d='M14 10h2l2 12h2'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/home.css?v=1">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Schedule <span>Visualiser</span></a>
+    <nav>
+      <a class="navlink" href="#problem">Why</a>
+      <a class="navlink" href="#features">Features</a>
+      <a class="navlink" href="#how">How it works</a>
+      <a class="navlink" href="#who">Who it's for</a>
+      <a class="navlink" href="#faq">FAQ</a>
+      <a class="btn primary small" href="app.html">Open the app</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ---------- Hero ---------- -->
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Runs entirely in your browser</span>
+      <h1>Stop taking the programme <em>on trust</em>.</h1>
+      <p class="lead">
+        Drop in a Primavera P6 export and trace exactly what is driving any date —
+        forwards, backwards, or down the driving path only. Built so the engineers,
+        commercial team and client can interrogate the logic themselves, not just
+        the planner with a P6 licence.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href="app.html">Open a schedule</a>
+        <a class="btn" href="#how">See how it works</a>
+      </div>
+      <p class="cta-note">No account, no install, no upload — your .xer never leaves your machine.</p>
+    </div>
+
+    <div class="hero-figure">
+      <!-- Stylised trace: discipline colours, red outlines on the critical
+           chain, focus ring on the traced activity — same language as the app. -->
+      <svg viewBox="0 0 560 200" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A logic network diagram: six activities linked by arrows, with the critical chain outlined in red and one traced activity ringed.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"
+                  markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--faint)"/>
+          </marker>
+          <marker id="arc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"
+                  markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--critical)"/>
+          </marker>
+        </defs>
+
+        <!-- month ruler + gridlines -->
+        <g fill="var(--faint)" font-size="9.5" font-family="Segoe UI, system-ui, sans-serif">
+          <text x="16" y="12">MAR</text>
+          <text x="152" y="12">APR</text>
+          <text x="288" y="12">MAY</text>
+          <text x="424" y="12">JUN</text>
+        </g>
+        <g stroke="var(--border)" stroke-width="1">
+          <line x1="0" y1="22" x2="560" y2="22"/>
+          <line x1="144" y1="22" x2="144" y2="200"/>
+          <line x1="280" y1="22" x2="280" y2="200"/>
+          <line x1="416" y1="22" x2="416" y2="200"/>
+        </g>
+
+        <!-- data date -->
+        <line x1="96" y1="24" x2="96" y2="200" stroke="var(--accent)"
+              stroke-width="1.5" stroke-dasharray="5 4" opacity="0.75"/>
+        <text x="100" y="196" fill="var(--accent)" font-size="9"
+              font-family="Segoe UI, system-ui, sans-serif">data date</text>
+
+        <!-- edges -->
+        <g fill="none" stroke-width="1.6">
+          <path d="M116 60 C 134 60, 134 112, 152 112" stroke="var(--faint)" marker-end="url(#ar)"/>
+          <path d="M116 164 C 134 164, 134 112, 152 112" stroke="var(--faint)" marker-end="url(#ar)"/>
+          <path d="M252 112 L 288 112" stroke="var(--critical)" stroke-width="2" marker-end="url(#arc)"/>
+          <path d="M388 112 C 406 112, 406 60, 424 60" stroke="var(--critical)" stroke-width="2" marker-end="url(#arc)"/>
+          <path d="M388 112 C 406 112, 406 164, 424 164" stroke="var(--faint)" marker-end="url(#ar)"/>
+        </g>
+
+        <!-- focus ring on the traced activity -->
+        <rect x="283" y="91" width="110" height="42" rx="10" fill="none"
+              stroke="var(--accent-dark)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.8"/>
+
+        <!-- nodes -->
+        <g font-family="Segoe UI, system-ui, sans-serif" font-size="10.5" font-weight="600">
+          <g>
+            <rect x="16" y="44" width="100" height="32" rx="7" fill="var(--violet)"
+                  fill-opacity="0.14" stroke="var(--violet)" stroke-width="1.3"/>
+            <text x="66" y="64" text-anchor="middle" fill="var(--text)">Site survey</text>
+          </g>
+          <g>
+            <rect x="16" y="148" width="100" height="32" rx="7" fill="var(--amber)"
+                  fill-opacity="0.16" stroke="var(--amber)" stroke-width="1.3"/>
+            <text x="66" y="168" text-anchor="middle" fill="var(--text)">Long-lead order</text>
+          </g>
+          <g>
+            <rect x="152" y="96" width="100" height="32" rx="7" fill="var(--accent)"
+                  fill-opacity="0.12" stroke="var(--critical)" stroke-width="2"/>
+            <text x="202" y="116" text-anchor="middle" fill="var(--text)">Pile design</text>
+          </g>
+          <g>
+            <rect x="288" y="96" width="100" height="32" rx="7" fill="var(--aqua)"
+                  fill-opacity="0.14" stroke="var(--critical)" stroke-width="2"/>
+            <text x="338" y="116" text-anchor="middle" fill="var(--text)">Piling</text>
+          </g>
+          <g>
+            <rect x="424" y="44" width="100" height="32" rx="7" fill="var(--aqua)"
+                  fill-opacity="0.14" stroke="var(--critical)" stroke-width="2"/>
+            <text x="474" y="64" text-anchor="middle" fill="var(--text)">Steel erection</text>
+          </g>
+          <g>
+            <rect x="424" y="148" width="100" height="32" rx="7" fill="var(--accent)"
+                  fill-opacity="0.12" stroke="var(--accent)" stroke-width="1.3"/>
+            <text x="474" y="168" text-anchor="middle" fill="var(--text)">Utilities</text>
+          </g>
+        </g>
+      </svg>
+      <p class="figure-cap">Red outline = critical · ringed = the activity you traced</p>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- Trust strip ---------- -->
+<div class="trust">
+  <div class="wrap">
+    <div><b>Nothing uploaded</b> — parsed in your browser</div>
+    <div><b>No install</b> — it's just a web page</div>
+    <div><b>Reads P6 .xer</b> exports directly</div>
+    <div><b>P6's own</b> dates and float</div>
+  </div>
+</div>
+
+<!-- ---------- Problem / solution ---------- -->
+<section id="problem">
+  <div class="wrap">
+    <h2 class="section-title">The schedule shouldn't be a black box</h2>
+    <p class="section-sub">
+      Most of the people whose work the programme describes have never seen it as
+      anything but a PDF. Every question about it has to queue behind one person.
+    </p>
+    <div class="split">
+      <div class="card bad">
+        <h3>How it usually goes</h3>
+        <ul>
+          <li>The date slipped. Nobody in the room can say which activity moved it.</li>
+          <li>Only the planner has P6, so every "why?" becomes an email and a two-day wait.</li>
+          <li>The printed critical path is a wall of bars — you can't see what feeds what.</li>
+          <li>Engineers can't sanity-check the logic against how the work is actually built.</li>
+          <li>By the time the answer arrives, the mitigation window has closed.</li>
+        </ul>
+      </div>
+      <div class="card good">
+        <h3>How it goes with Schedule Visualiser</h3>
+        <ul>
+          <li>Anyone opens the .xer in a browser — no licence, no training day.</li>
+          <li>Click an activity, see its chain both ways, and read the driving path.</li>
+          <li>Roll the whole programme up to disciplines, then drill into the detail.</li>
+          <li>Discipline leads spot wrong logic themselves, in their own language.</li>
+          <li>The question gets answered live, in the meeting it was asked in.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- Features ---------- -->
+<section id="features" class="alt">
+  <div class="wrap">
+    <h2 class="section-title">Built for asking "why is this date what it is?"</h2>
+    <p class="section-sub">
+      Every control exists to answer a question someone actually asks in a
+      progress meeting.
+    </p>
+    <div class="features">
+      <div class="feature">
+        <div class="ficon" style="background:rgba(42,120,214,0.12)">🔍</div>
+        <h3>Trace any activity</h3>
+        <p>Pick an activity and see everything linked to it — predecessors, successors
+           or both, to full depth or just a level or two.</p>
+      </div>
+      <div class="feature">
+        <div class="ficon" style="background:rgba(208,59,59,0.12)">⚡</div>
+        <h3>Driving path only</h3>
+        <p>Follow just the relationships actually controlling dates. The difference
+           between "what is connected?" and "what is pushing this?"</p>
+      </div>
+      <div class="feature">
+        <div class="ficon" style="background:rgba(27,175,122,0.14)">🎯</div>
+        <h3>Critical path, your threshold</h3>
+        <p>Filter to float ≤ 0 days, or open it up to 5, 10, 20 — whatever counts as
+           near-critical on your programme.</p>
+      </div>
+      <div class="feature">
+        <div class="ficon" style="background:rgba(74,58,167,0.12)">🗂️</div>
+        <h3>WBS roll-up</h3>
+        <p>Start at one balloon per discipline and watch the critical path cross
+           between them. Expand a group to drill into its detail.</p>
+      </div>
+      <div class="feature">
+        <div class="ficon" style="background:rgba(237,161,0,0.16)">📅</div>
+        <h3>Time-true layout</h3>
+        <p>Activities sit left-to-right by real date against a month ruler, with the
+           data date marked and optional duration bars.</p>
+      </div>
+      <div class="feature">
+        <div class="ficon" style="background:rgba(42,120,214,0.12)">📊</div>
+        <h3>Logic-linked Gantt</h3>
+        <p>Prefer bars? Switch tabs. Click a bar to see its logic and step through
+           it — the same trace, in the view people already know.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- How it works ---------- -->
+<section id="how">
+  <div class="wrap">
+    <h2 class="section-title">Three steps, about a minute</h2>
+    <p class="section-sub">
+      Nothing to set up, and nothing about your P6 environment has to change.
+    </p>
+    <div class="steps">
+      <div class="step">
+        <div class="num"></div>
+        <h3>Export from P6</h3>
+        <p>Your planner exports the programme as a <strong>.xer</strong> file — the
+           standard P6 export, no special settings.</p>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <h3>Drag it onto the page</h3>
+        <p>Drop the file anywhere on the app. It's read in your browser in seconds —
+           no upload, no waiting.</p>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <h3>Start asking questions</h3>
+        <p>Search an activity, trace its logic, filter to what's critical, and roll
+           up or drill down as the conversation moves.</p>
+      </div>
+    </div>
+    <div class="cta-row" style="justify-content:center; margin-top:44px">
+      <a class="btn primary" href="app.html">Open the app</a>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- Who it's for ---------- -->
+<section id="who" class="alt">
+  <div class="wrap">
+    <h2 class="section-title">For everyone the programme affects</h2>
+    <p class="section-sub">
+      Planners build the schedule. This is for the rest of the team who have to
+      live by it.
+    </p>
+    <div class="who">
+      <div>
+        <h3>Project managers</h3>
+        <p>Walk into the progress meeting already knowing which chain is holding the
+           date, and what mitigating it would actually take.</p>
+      </div>
+      <div>
+        <h3>Discipline &amp; engineering leads</h3>
+        <p>Check the logic against how the work really gets built — and catch the
+           missing tie or the wrong lag before it costs weeks.</p>
+      </div>
+      <div>
+        <h3>Commercial &amp; contracts</h3>
+        <p>See the driving path behind a delay, and understand an EOT position
+           without waiting on someone else's screenshot.</p>
+      </div>
+      <div>
+        <h3>Clients &amp; PMO</h3>
+        <p>Interrogate a submitted programme yourself instead of accepting a summary
+           bar chart at face value.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- Privacy ---------- -->
+<section>
+  <div class="wrap">
+    <div class="privacy">
+      <div class="lock">🔒</div>
+      <div>
+        <h2>Your schedule never leaves your computer</h2>
+        <p>
+          There is no server, no account and no database. The .xer is parsed by
+          JavaScript running in your own browser, and it stays there — which is what
+          makes this usable on confidential and commercially sensitive programmes
+          where uploading a live schedule to someone else's cloud is out of the
+          question. Load the page once and it will even work with the network off.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- FAQ ---------- -->
+<section id="faq" class="alt">
+  <div class="wrap">
+    <h2 class="section-title">Questions</h2>
+    <div class="faq">
+      <details open>
+        <summary>Do I need a P6 licence?</summary>
+        <p>No. You need someone on the project to send you a .xer export — after
+           that, everything happens in your browser. That's the whole point: the
+           people asking questions about the programme usually aren't the people
+           with the licence.</p>
+      </details>
+      <details>
+        <summary>Where does my schedule data go?</summary>
+        <p>Nowhere. The file is read locally by your browser and is never sent to any
+           server. There's no upload step, no account, and nothing stored online.</p>
+      </details>
+      <details>
+        <summary>Does it change or re-calculate my schedule?</summary>
+        <p>No — it's read-only, and it deliberately trusts P6's own calculated dates
+           and total float rather than re-running its own CPM. P6 stays the
+           scheduling engine; this shows you what it produced. An activity counts as
+           critical when its total float is at or below the threshold you set.</p>
+      </details>
+      <details>
+        <summary>What's a "driving path", and why does it matter?</summary>
+        <p>A relationship is driving when the predecessor is genuinely holding the
+           successor's date, rather than just being connected to it. Tracing all
+           logic answers "what is this linked to?"; tracing the driving path answers
+           "what is actually pushing this date?" — usually the question you meant.</p>
+      </details>
+      <details>
+        <summary>What files can I open?</summary>
+        <p>Primavera P6 <strong>.xer</strong> exports, including files containing
+           several projects — you pick which one to view. Support for P6 XML is on
+           the list.</p>
+      </details>
+      <details>
+        <summary>How big a schedule can it handle?</summary>
+        <p>Large programmes are fine to load; the WBS roll-up exists precisely so a
+           schedule with thousands of activities opens as a handful of discipline
+           balloons rather than an unreadable wall. Trace and filter from there.</p>
+      </details>
+      <details>
+        <summary>Does it work on a phone?</summary>
+        <p>It's designed for a desktop or laptop screen — network diagrams need room.
+           A tablet works at a push, but a phone won't give you the space to read a
+           logic chain.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- Closing ---------- -->
+<section>
+  <div class="wrap closing">
+    <h2>Open your programme and have a look</h2>
+    <p>
+      Nothing to sign up for and nothing to install — if you have a .xer file, you're
+      about ten seconds from tracing it.
+    </p>
+    <div class="cta-row" style="justify-content:center">
+      <a class="btn primary" href="app.html">Open the app</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Schedule <span>Visualiser</span></a>
+    <p>schedulevisualiser.com</p>
+  </div>
+  <div class="wrap">
+    <p class="legal">
+      Primavera and P6 are trademarks of Oracle Corporation. Schedule Visualiser is
+      an independent tool and is not affiliated with or endorsed by Oracle.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
