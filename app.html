@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Schedule Visualiser</title>
   <!-- ?v= busts the browser cache; bump it when editing css/js -->
-  <link rel="stylesheet" href="css/style.css?v=28">
+  <link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
   <div id="app">
@@ -35,6 +35,13 @@
         </div>
       </div>
 
+      <!-- Actions for whatever is selected in the diagram. Hidden until
+           something is selected; filled by showDetails / showGroupDetails. -->
+      <div id="traceSection" style="display:none">
+        <h2 class="section" id="traceSectionTitle">Trace</h2>
+        <div id="traceActions" class="trace-btns" style="margin-top:8px"></div>
+      </div>
+
       <div id="viewOptionsSection">
         <h2 class="section">View options</h2>
         <div class="options" style="margin-top:8px">
@@ -44,15 +51,17 @@
             <option value="logic">Logic flow</option>
           </select>
 
-          <label for="directionSelect" class="net-only">Direction</label>
-          <select id="directionSelect" class="net-only" disabled>
+          <!-- Direction and Depth shape traces in both tabs, so unlike Layout
+               they stay visible on the Gantt -->
+          <label for="directionSelect">Direction</label>
+          <select id="directionSelect" disabled>
             <option value="both">Predecessors + successors</option>
             <option value="pred">Predecessors only</option>
             <option value="succ">Successors only</option>
           </select>
 
-          <label for="depthSelect" class="net-only">Depth</label>
-          <select id="depthSelect" class="net-only" disabled>
+          <label for="depthSelect">Depth</label>
+          <select id="depthSelect" disabled>
             <option value="all">Full chain</option>
             <option value="1">1 level</option>
             <option value="2">2 levels</option>
@@ -66,11 +75,6 @@
             <label for="criticalOnly">Critical paths only, float ≤</label>
             <input type="number" id="floatThreshold" value="0" step="1" disabled>
             <span>days</span>
-          </div>
-
-          <div class="check-row">
-            <input type="checkbox" id="drivingOnly" disabled>
-            <label for="drivingOnly" title="Follow only the relationships that actually control dates (predecessor finishes exactly when the successor starts). Answers 'what is pushing this date?' rather than 'what is connected?'">Driving path only</label>
           </div>
 
           <div class="check-row">
@@ -167,7 +171,7 @@
   <script src="js/vendor/cytoscape.min.js"></script>
   <script src="js/vendor/dagre.min.js"></script>
   <script src="js/vendor/cytoscape-dagre.js"></script>
-  <script src="js/xer-parser.js?v=28"></script>
-  <script src="js/app.js?v=28"></script>
+  <script src="js/xer-parser.js?v=31"></script>
+  <script src="js/app.js?v=31"></script>
 </body>
 </html>

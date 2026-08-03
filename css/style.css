@@ -123,7 +123,7 @@ header h1 span { color: var(--accent); }
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 11px;
 }
 
 #graphWrap { grid-area: graph; position: relative; background: var(--panel); }
@@ -223,7 +223,14 @@ header h1 span { color: var(--accent); }
 
 .btn.primary:hover { filter: brightness(1.08); }
 
-.full-width { width: 100%; margin-top: 10px; }
+/* The two trace buttons in the details panel. Stacked, because the panel is
+   too narrow for both labels side by side (.btn is white-space: nowrap). */
+.trace-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
 
 select, input[type="number"], input[type="text"], input[type="search"] {
   background: var(--panel);
@@ -385,7 +392,9 @@ h2.section {
 
 /* ---------- WBS tree ---------- */
 .wbs-tree {
-  max-height: 320px;
+  /* Deliberately short: the tree scrolls internally so that the trace buttons
+     and View options below it stay on screen without scrolling the sidebar. */
+  max-height: clamp(100px, 16vh, 220px);
   overflow-y: auto;
   background: var(--panel-2);
   border: 1px solid var(--border);

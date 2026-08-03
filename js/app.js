@@ -128,9 +128,9 @@
     return $("durScale").checked && !$("durScale").disabled;
   }
 
-  function drivingOnly() {
-    return $("drivingOnly").checked;
-  }
+  // Set per-trace by the two "Trace" buttons in the details panel: false =
+  // follow all logic, true = follow only driving relationships.
+  let traceDriving = false;
 
   // ---------- Driving relationships ----------
   // A link is "driving" when the predecessor is actually holding the
@@ -174,7 +174,7 @@
   }
 
   function linkPasses(link) {
-    return !drivingOnly() || link.driving;
+    return !traceDriving || link.driving;
   }
 
   /**
@@ -348,7 +348,7 @@
       depth: $("depthSelect").value,
       criticalOnly: $("criticalOnly").checked,
       floatThreshold: $("floatThreshold").value,
-      drivingOnly: $("drivingOnly").checked,
+      traceDriving,
       excludeMs: $("excludeMilestones").checked,
       viewport: cy ? { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } } : null,
     };
@@ -363,6 +363,7 @@
   function commitState() {
     if (model) lastCommitted = captureState();
     updateFilterChips();
+    renderSelectionActions();
   }
 
   // Dismissible chips above the diagram showing which filters are active,
@@ -376,9 +377,6 @@
     const chips = [];
     if (criticalOnly()) {
       chips.push({ label: "Critical only (float ≤ " + floatThreshold() + "d)", control: "criticalOnly" });
-    }
-    if (drivingOnly()) {
-      chips.push({ label: "Driving path only", control: "drivingOnly" });
     }
     if (excludeMilestones()) {
       chips.push({ label: "Milestones hidden", control: "excludeMilestones" });
@@ -406,6 +404,12 @@
         '<span class="filter-chip">Tracing: ' +
         escapeHtml(model.tasks.get(focusTaskId).name) +
         '<span class="chip-x" data-clear-wbs="1" title="Show the whole schedule again">✕</span></span>';
+      // which of the two trace buttons produced this view
+      if (traceDriving) {
+        html +=
+          '<span class="filter-chip">Driving path only' +
+          '<span class="chip-x" data-trace-all="1" title="Re-trace following all logic">✕</span></span>';
+      }
     }
     if (wbsMode) {
       const lv = $("wbsLevelSelect").value;
@@ -420,6 +424,10 @@
     const clearWbs = wrap.querySelector("[data-clear-wbs]");
     if (clearWbs) {
       clearWbs.addEventListener("click", () => $("fullNetworkBtn").click());
+    }
+    const traceAll = wrap.querySelector("[data-trace-all]");
+    if (traceAll) {
+      traceAll.addEventListener("click", () => focusOn(focusTaskId, false));
     }
     positionFilterChips();
   }
@@ -463,7 +471,7 @@
     $("depthSelect").value = s.depth;
     $("criticalOnly").checked = s.criticalOnly;
     $("floatThreshold").value = s.floatThreshold;
-    $("drivingOnly").checked = !!s.drivingOnly;
+    traceDriving = !!s.traceDriving;
     $("excludeMilestones").checked = !!s.excludeMs;
     selectedProjId = s.selectedProjId;
     if ($("projectSelect").options.length) $("projectSelect").value = s.selectedProjId;
@@ -556,11 +564,13 @@
       $("searchInput").disabled = false;
       $("dropHint").style.display = "none";
       for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
-                        "floatThreshold", "drivingOnly", "excludeMilestones", "wbsModeBtn",
+                        "floatThreshold", "excludeMilestones", "wbsModeBtn",
                         "fullNetworkBtn", "fitBtn"]) {
         $(id).disabled = false;
       }
       syncDurControl();
+      traceDriving = false; // a new file starts on all-logic tracing
+      clearSelectionActions();
       $("detailsPanel").innerHTML =
         '<p class="hint">Search for an activity above, or click a node in the diagram.</p>';
 
@@ -1284,6 +1294,7 @@
     setStatus(
       "Tracing " + t.code + " — showing " + nodeIds.size + " activities, " +
       linkIds.size + " relationships" + note +
+      (traceDriving ? " · driving path only" : "") +
       (wbsMode ? " · rolled up to WBS groups" : "")
     );
   }
@@ -1456,6 +1467,41 @@
     return "<ul class='rel-list'>" + rows.join("") + "</ul>";
   }
 
+  // ---------- Selection actions ----------
+  // The sidebar section above "View options". It holds whatever you can *do*
+  // with the current selection, so the buttons sit near the filters that
+  // shape the result rather than buried under the details table.
+  let detailsTaskId = null; // activity the details panel is showing, if any
+
+  function clearSelectionActions() {
+    detailsTaskId = null;
+    $("traceActions").innerHTML = "";
+    $("traceSection").style.display = "none";
+  }
+
+  /** Rebuilt after every action (via commitState), so "Clear trace" appears
+   *  and disappears with the trace itself. */
+  function renderSelectionActions() {
+    const t = model && detailsTaskId ? model.tasks.get(detailsTaskId) : null;
+    if (!t) {
+      $("traceActions").innerHTML = "";
+      $("traceSection").style.display = "none";
+      return;
+    }
+    const tracing = tracingNow();
+    $("traceSectionTitle").textContent = "Trace from " + t.code;
+    $("traceActions").innerHTML =
+      '<button id="focusBtn" class="btn primary" title="Show everything linked to this activity, in both directions">Trace: all logic</button>' +
+      '<button id="focusDriveBtn" class="btn primary" title="Follow only the relationships that actually control dates - what is pushing this activity">Trace: driving path</button>' +
+      (tracing
+        ? '<button id="clearTraceBtn" class="btn" title="Drop the trace and show every activity again">Clear trace</button>'
+        : "");
+    $("traceSection").style.display = "";
+    $("focusBtn").addEventListener("click", () => focusOn(t.id, false));
+    $("focusDriveBtn").addEventListener("click", () => focusOn(t.id, true));
+    if (tracing) $("clearTraceBtn").addEventListener("click", clearTrace);
+  }
+
   function showDetails(taskId) {
     const t = model.tasks.get(taskId);
     if (!t) return;
@@ -1478,13 +1524,13 @@
       "<tr><td>Late finish</td><td>" + fmtDate(t.lateFinish) + "</td></tr>" +
       "<tr><td>WBS</td><td>" + escapeHtml(t.wbsPath || "—") + "</td></tr>" +
       "</table>" +
-      '<button id="focusBtn" class="btn primary full-width">Trace from this activity</button>' +
       "<h4>Predecessors (" + t.predecessors.length + ")</h4>" +
       relListHtml(t, t.predecessors, "up") +
       "<h4>Successors (" + t.successors.length + ")</h4>" +
       relListHtml(t, t.successors, "down");
 
-    $("focusBtn").addEventListener("click", () => focusOn(taskId));
+    detailsTaskId = taskId;
+    renderSelectionActions();
     for (const li of $("detailsPanel").querySelectorAll(".rel-item")) {
       li.addEventListener("click", () => {
         const id = li.getAttribute("data-task");
@@ -1508,15 +1554,45 @@
     if (node.nonempty()) node.addClass("selected");
   }
 
-  function focusOn(taskId) {
-    if (activeTab === "gantt") switchTab("network"); // traces live on the network
+  /** driving: true = follow only date-controlling links; undefined = keep
+   *  whatever the last trace used (so re-tracing by double-click is stable) */
+  function focusOn(taskId, driving) {
     pushUndo();
+    if (driving !== undefined) traceDriving = driving;
     focusTaskId = taskId;
-    busy("Tracing…", () => {
+    const msg = traceDriving ? "Tracing driving path…" : "Tracing…";
+    // In the Gantt a trace is a filter, the same as "critical paths only":
+    // the chart drops to the traced activities rather than jumping tabs.
+    if (activeTab === "gantt") {
+      lastView = { type: "trace", discipline: null };
+      networkStale = true; // the network picks the trace up when tabbed back
+      busy(msg, () => {
+        renderGantt();
+        ganttSelect(taskId, true);
+      });
+      return;
+    }
+    busy(msg, () => {
       renderTrace();
       showDetails(taskId);
       highlightNode(taskId);
     });
+  }
+
+  /** Drop the active trace and show everything again, in whichever tab is
+   *  open. The Gantt needs this: its toolbar and the filter chips (with
+   *  their ✕) live in the network pane, which is hidden there. */
+  function clearTrace() {
+    if (!model) return;
+    if (activeTab !== "gantt") {
+      $("fullNetworkBtn").click(); // same route as the "Tracing: …" chip's ✕
+      return;
+    }
+    pushUndo();
+    focusTaskId = null;
+    lastView = { type: "full", discipline: null };
+    networkStale = true;
+    busy("Updating Gantt…", renderGantt);
   }
 
   // ---------- Search ----------
@@ -1628,16 +1704,38 @@
     return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "2-digit" });
   }
 
+  function tracingNow() {
+    return lastView.type === "trace" && focusTaskId && model.tasks.has(focusTaskId);
+  }
+
   function ganttTasks() {
     let list = visibleTasks().filter((t) => t.start);
+    // a trace filters the Gantt down to the activity's logic, just like the
+    // critical-path filter narrows it to critical work
+    if (tracingNow()) {
+      const { nodeIds } = trace(focusTaskId);
+      list = list.filter((t) => nodeIds.has(t.id));
+    }
     if (criticalOnly()) list = list.filter(isCriticalTask);
     if (excludeMilestones()) list = list.filter((t) => !t.isMilestone);
     return list;
   }
 
+  /** The Gantt has no chips of its own, so the status bar carries the "what
+   *  am I looking at" message. */
+  function setGanttStatus(n) {
+    const t = tracingNow() ? model.tasks.get(focusTaskId) : null;
+    setStatus(
+      (t ? "Tracing " + t.code + " — showing " : "Gantt — ") + n + " activities" +
+      (criticalOnly() ? " (critical only)" : "") +
+      (t && traceDriving ? " · driving path only" : "")
+    );
+  }
+
   function renderGantt() {
     if (!model) return;
     const list = ganttTasks();
+    setGanttStatus(list.length);
     $("ganttEmpty").style.display = list.length ? "none" : "flex";
     const host = $("ganttRows");
     if (!list.length) {
@@ -2213,16 +2311,12 @@
       "<p>" + escapeHtml(wbsPathOf(wbsId)) + "</p>" +
       (crit ? '<span class="badge">' + crit + " CRITICAL</span>" : "") +
       "</div>" +
-      '<button id="openGroupBtn" class="btn primary full-width">Show activities in this group</button>' +
       "<h4>Activities (" + members.length + ")" +
       (members.length > 100 ? " — first 100 shown" : "") + "</h4>" +
       "<ul class='rel-list'>" + rows + "</ul>";
-    $("openGroupBtn").addEventListener("click", () => {
-      pushUndo();
-      if (wbsMode) toggleWbsMode(false);
-      selectWbsRow(wbsId);
-      busy("Drawing…", () => renderWbsView(wbsId));
-    });
+    // No actions for a group: double-click expands it, and the sidebar WBS
+    // row isolates the branch.
+    clearSelectionActions();
     for (const li of $("detailsPanel").querySelectorAll(".rel-item")) {
       li.addEventListener("click", () => showDetails(li.getAttribute("data-task")));
     }
@@ -2304,7 +2398,7 @@
     });
 
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
-                      "floatThreshold", "drivingOnly", "excludeMilestones", "durScale"]) {
+                      "floatThreshold", "excludeMilestones", "durScale"]) {
       $(id).addEventListener("change", () => {
         if (!model) return;
         pushUndo();
