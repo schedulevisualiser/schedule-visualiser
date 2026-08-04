@@ -747,9 +747,6 @@ h2.section {
   overflow: auto;
   position: relative;
   min-height: 0;
-  /* one finger still scrolls the chart; two fingers are left to us so a pinch
-     zooms the time axis instead of zooming the whole page */
-  touch-action: pan-x pan-y;
 }
 
 .g-row { display: flex; height: 24px; }

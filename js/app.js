@@ -1872,65 +1872,6 @@
     drawGanttLinks();
   }
 
-  // ---------- Pinch zoom ----------
-  // Two fingers on the chart scale the time axis, matching the pinch-zoom
-  // Cytoscape already gives the network diagram. Only the track scales: the
-  // label and date columns are fixed widths, so the table reads identically at
-  // every zoom level and only the bars stretch.
-  const G_ZOOM_MIN = 0.2;
-  const G_ZOOM_MAX = 10;
-
-  function initGanttPinch() {
-    const scroll = $("ganttScroll");
-    let pinch = null; // { gap, mult, day, viewX } captured when the 2nd finger lands
-    let raf = 0;
-
-    const gapOf = (t) => Math.max(1, Math.hypot(
-      t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY));
-    // horizontal midpoint, as an offset into the scrolling part of the track
-    const viewXOf = (t) =>
-      (t[0].clientX + t[1].clientX) / 2 -
-      scroll.getBoundingClientRect().left - G_FROZEN_W;
-
-    scroll.addEventListener("touchstart", (e) => {
-      if (e.touches.length !== 2 || !ganttGeom) return;
-      const viewX = viewXOf(e.touches);
-      pinch = {
-        gap: gapOf(e.touches),
-        mult: ganttZoomMult,
-        // the day under the pinch, held still while the gesture runs
-        day: (viewX + scroll.scrollLeft) / ganttGeom.px,
-        viewX,
-      };
-    }, { passive: false });
-
-    scroll.addEventListener("touchmove", (e) => {
-      if (!pinch || e.touches.length !== 2) return;
-      e.preventDefault(); // two fingers here mean zoom, not scroll
-      pinch.viewX = viewXOf(e.touches); // so the gesture can pan as it zooms
-      const next = Math.min(G_ZOOM_MAX, Math.max(
-        G_ZOOM_MIN, pinch.mult * (gapOf(e.touches) / pinch.gap)));
-      if (Math.abs(next - ganttZoomMult) / ganttZoomMult < 0.004) return;
-      ganttZoomMult = next;
-      // one redraw per frame; renderGantt rebuilds every row, so a redraw per
-      // touchmove would drop frames on a big schedule
-      if (!raf) {
-        raf = requestAnimationFrame(() => {
-          raf = 0;
-          if (!pinch || !model) return;
-          renderGantt();
-          if (ganttGeom) scroll.scrollLeft = pinch.day * ganttGeom.px - pinch.viewX;
-        });
-      }
-    }, { passive: false });
-
-    const endPinch = (e) => {
-      if (pinch && e.touches.length < 2) pinch = null;
-    };
-    scroll.addEventListener("touchend", endPinch);
-    scroll.addEventListener("touchcancel", endPinch);
-  }
-
   function buildGanttScale() {
     const trk = $("ganttScaleTrack");
     const { min, px, trackW, height } = ganttGeom;
@@ -2448,14 +2389,13 @@
       if (row) ganttSelect(row.getAttribute("data-task"), false);
     });
     $("ganttZoomIn").addEventListener("click", () => {
-      ganttZoomMult = Math.min(G_ZOOM_MAX, ganttZoomMult * 1.5);
+      ganttZoomMult = Math.min(10, ganttZoomMult * 1.5);
       if (model) busy("Zooming…", renderGantt);
     });
     $("ganttZoomOut").addEventListener("click", () => {
-      ganttZoomMult = Math.max(G_ZOOM_MIN, ganttZoomMult / 1.5);
+      ganttZoomMult = Math.max(0.2, ganttZoomMult / 1.5);
       if (model) busy("Zooming…", renderGantt);
     });
-    initGanttPinch();
 
     for (const id of ["layoutSelect", "directionSelect", "depthSelect", "criticalOnly",
                       "floatThreshold", "excludeMilestones", "durScale"]) {
