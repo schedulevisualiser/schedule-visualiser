@@ -2475,6 +2475,14 @@
       document.body.classList.remove("dragging");
       if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
     });
+
+    // ?sample=1 — the landing page's "Try a sample schedule" link. The schedule
+    // is embedded in js/sample-data.js, so this costs no network request and
+    // works with the page opened straight off disk.
+    const params = new URLSearchParams(location.search);
+    if (params.get("sample") === "1" && window.SAMPLE_XER) {
+      loadXerText(window.SAMPLE_XER, "Sample schedule");
+    }
   }
 
   document.addEventListener("DOMContentLoaded", init);

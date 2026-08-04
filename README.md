@@ -23,7 +23,9 @@ there is no server-side processing, which matters for confidential programmes.
 ## Using it
 
 1. Click **Open .xer file** (or drag a `.xer` anywhere onto the page).
-   Use **Load sample project** to try it without a real schedule.
+   To try it without a real schedule, open `app.html?sample=1` — the landing
+   page's "Try a sample schedule" button — which loads the demo schedule
+   embedded in `js/sample-data.js` with no network request.
 2. Search by activity ID, name, or WBS in the sidebar — or use the
    **WBS / Disciplines tree** to browse every level of the schedule's WBS
    (top-level bands like Environmental down to individual work packages).
@@ -96,7 +98,11 @@ coloured balloon per discipline. Drill in from there, or press
 | File | Purpose |
 | --- | --- |
 | `index.html` | Landing page for schedulevisualiser.com |
+| `404.html` | Branded not-found page (styles inlined so it works at any URL depth) |
 | `css/home.css` | Landing-page styling (shares the app's palette) |
+| `img/og-image.png` | 1200×630 social preview card |
+| `tools/make_og_image.py` | Regenerates that card (`python tools/make_og_image.py`; needs Pillow) |
+| `robots.txt`, `sitemap.xml` | Search-engine basics, pointing at the custom domain |
 | `app.html` | App shell / layout |
 | `js/xer-parser.js` | Parses the XER tables (TASK, TASKPRED, PROJECT, PROJWBS, CALENDAR) into a task/link model |
 | `js/app.js` | Search, trace traversal, details panel, Cytoscape rendering |
@@ -112,8 +118,6 @@ tool visualises its output. (Criticality = total float ≤ threshold.)
 
 ## Roadmap ideas
 
-- Driving-relationship / longest-path tracing (P6's `driving_path_flag` is
-  already parsed)
 - Colour-by WBS / status / float bands; group nodes by WBS
 - Time-scaled layout (position nodes by date, like a logic-linked Gantt)
 - Compare two XER updates (added/deleted logic, slippage)

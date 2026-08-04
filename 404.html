@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page not found — Schedule Visualiser</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cg stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M9 10h5M18 10h5M9 22h5M18 22h5'/%3E%3Cpath d='M14 10h2l2 12h2'/%3E%3C/g%3E%3C/svg%3E">
+  <!-- Styles are inline rather than linked: a 404 can be served for a URL at
+       any depth, and a relative stylesheet path would 404 alongside it. -->
+  <style>
+    :root {
+      --bg: #f9f9f7;
+      --panel: #fcfcfb;
+      --border: #e1e0d9;
+      --text: #0b0b0b;
+      --muted: #52514e;
+      --faint: #898781;
+      --accent: #2a78d6;
+      --critical: #d03b3b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 32px 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      text-align: center;
+      -webkit-font-smoothing: antialiased;
+    }
+    .brand {
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: 0.2px;
+      text-decoration: none;
+      color: var(--text);
+      margin-bottom: 34px;
+    }
+    .brand span { color: var(--accent); }
+    figure { margin: 0 0 26px; }
+    svg { display: block; width: 260px; height: auto; }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      letter-spacing: -0.4px;
+      line-height: 1.2;
+    }
+    p {
+      margin: 0 0 28px;
+      color: var(--muted);
+      max-width: 34em;
+    }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .btn {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      padding: 12px 22px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color 0.15s, filter 0.15s;
+    }
+    .btn:hover, .btn:focus-visible { border-color: var(--accent); }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(42, 120, 214, 0.28);
+    }
+    .btn.primary:hover, .btn.primary:focus-visible { filter: brightness(1.08); }
+    footer { margin-top: 40px; font-size: 13px; color: var(--faint); }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <a class="brand" href="/">Schedule <span>Visualiser</span></a>
+
+  <figure>
+    <!-- A broken link, in the app's own visual language -->
+    <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg" role="img"
+         aria-label="Two activity boxes with the logic link between them broken.">
+      <rect x="2" y="26" width="92" height="38" rx="8" fill="#eef4fc"
+            stroke="var(--accent)" stroke-width="1.6"/>
+      <rect x="166" y="26" width="92" height="38" rx="8" fill="#fcf0f0"
+            stroke="var(--critical)" stroke-width="1.6" stroke-dasharray="5 4"/>
+      <path d="M96 45 L 118 45" stroke="var(--faint)" stroke-width="2"/>
+      <path d="M142 45 L 160 45" stroke="var(--faint)" stroke-width="2"/>
+      <path d="M164 45 L 156 41 L 156 49 Z" fill="var(--faint)"/>
+      <g stroke="var(--critical)" stroke-width="2.5" stroke-linecap="round">
+        <path d="M124 34 L 134 56"/>
+        <path d="M136 34 L 126 56"/>
+      </g>
+    </svg>
+  </figure>
+
+  <h1>That page has no predecessors</h1>
+  <p>
+    The link is broken or the page has moved. Nothing to trace here — head back
+    to the start, or open a schedule.
+  </p>
+
+  <div class="btn-row">
+    <a class="btn primary" href="/">Back to the home page</a>
+    <a class="btn" href="/app.html">Open the app</a>
+    <a class="btn" href="/app.html?sample=1">Try a sample schedule</a>
+  </div>
+
+  <footer>schedulevisualiser.com</footer>
+
+</body>
+</html>
