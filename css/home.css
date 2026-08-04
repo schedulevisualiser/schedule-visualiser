@@ -21,6 +21,12 @@
 
 html { scroll-behavior: smooth; }
 
+/* Anchor jumps and button transitions are decorative; honour the OS setting. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition-duration: 0.01ms !important; }
+}
+
 body {
   margin: 0;
   background: var(--bg);
