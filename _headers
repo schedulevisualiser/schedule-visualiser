@@ -1,0 +1,32 @@
+# Response headers for Cloudflare (Workers static assets / Pages).
+# GitHub Pages ignores this file entirely, so it is safe to commit before the
+# migration happens.
+#
+# The Content-Security-Policy is the point of moving hosts. connect-src 'none'
+# tells the browser to refuse every outbound fetch, XHR, WebSocket and beacon
+# from this origin, so "your schedule never leaves your browser" stops being a
+# promise about our code and becomes something the browser enforces and anyone
+# can verify by reading this header. The app makes no network calls after load,
+# so nothing legitimate is blocked.
+#
+# style-src needs 'unsafe-inline' for the style="..." attributes in the markup
+# and the inline <style> block in 404.html. script-src deliberately does NOT -
+# there is no inline script anywhere, and it stays that way.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# Vendored libraries are pinned copies that never change in place; everything
+# else is left to Cloudflare's defaults so a forgotten ?v= bump can't strand
+# anyone on a stale build.
+/js/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Consider adding HSTS once you have confirmed HTTPS works on the custom domain.
+# It is deliberately not enabled here because it is sticky - browsers will
+# refuse plain HTTP for the whole max-age and you cannot easily undo it.
+#   Strict-Transport-Security: max-age=31536000; includeSubDomains

@@ -103,6 +103,7 @@ coloured balloon per discipline. Drill in from there, or press
 | `img/og-image.png` | 1200×630 social preview card |
 | `tools/make_og_image.py` | Regenerates that card (`python tools/make_og_image.py`; needs Pillow) |
 | `robots.txt`, `sitemap.xml` | Search-engine basics, pointing at the custom domain |
+| `_headers` | Response headers for Cloudflare. The CSP's `connect-src 'none'` makes the browser itself block any outbound request, so "nothing is uploaded" is enforced rather than promised. Ignored by GitHub Pages. |
 | `app.html` | App shell / layout |
 | `js/xer-parser.js` | Parses the XER tables (TASK, TASKPRED, PROJECT, PROJWBS, CALENDAR) into a task/link model |
 | `js/app.js` | Search, trace traversal, details panel, Cytoscape rendering |

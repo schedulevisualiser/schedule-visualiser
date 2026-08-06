@@ -2336,6 +2336,7 @@
   function init() {
     initCy();
 
+    $("openFileBtn").addEventListener("click", () => $("fileInput").click());
     $("fileInput").addEventListener("change", (e) => {
       if (e.target.files.length) loadFile(e.target.files[0]);
       e.target.value = "";
