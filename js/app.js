@@ -2145,10 +2145,20 @@
         cy.nodes().removeClass("selected");
       }
     });
-    // right-click means "collapse" on the diagram - keep the browser's own
+    // Right-click means "collapse" on the diagram - keep the browser's own
     // context menu out of the way. Listen on the whole wrapper, because the
     // ruler, gridlines, chips and legend sit as layers above the canvas.
-    $("graphWrap").addEventListener("contextmenu", (e) => e.preventDefault());
+    //
+    // The spinner needs it too, and the reason is not obvious: contextmenu
+    // fires *after* mouseup, and cxttap fires *on* mouseup. So a right-click
+    // that actually collapses something has already run busy() - covering the
+    // viewport with the app-level spinner - by the time contextmenu arrives,
+    // and the spinner is a sibling of graphWrap rather than a child. Without
+    // this the menu appears on every collapse below WBS level 1 (level 1 is
+    // exempt only because collapseGroup returns early there).
+    for (const id of ["graphWrap", "spinner"]) {
+      $(id).addEventListener("contextmenu", (e) => e.preventDefault());
+    }
 
     cy.on("dbltap", "node", (evt) => {
       const id = evt.target.id();
