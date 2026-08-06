@@ -1,0 +1,19 @@
+// Cloudflare Workers config, read on every Git deploy.
+//
+// "name" must match the existing Worker (schedule-visualiser), or the deploy
+// creates a second one instead of updating this site.
+//
+// not_found_handling: without this, Workers returns a bare Cloudflare 404 for
+// unknown paths and never reaches our branded 404.html.
+//
+// html_handling is left at its default ("auto-trim"), so /app.html is served
+// as /app and the .html form redirects to it. sitemap.xml lists the trimmed
+// form so search engines are not pointed at a redirect.
+{
+  "name": "schedule-visualiser",
+  "compatibility_date": "2026-08-06",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "404-page"
+  }
+}
