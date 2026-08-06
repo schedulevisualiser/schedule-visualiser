@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "p6-visualiser",
+      "name": "schedule-visualiser",
       "runtimeExecutable": "python",
       "runtimeArgs": ["tools/serve.py", "8642"],
       "port": 8642

@@ -1,4 +1,4 @@
-# P6 Visualiser
+# Schedule Visualiser
 
 Interactive network-diagram explorer for Primavera P6 schedules. Load a `.xer`
 export, search for any activity, and trace its predecessor/successor chains —
