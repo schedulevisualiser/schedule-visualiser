@@ -1,0 +1,16 @@
+# Files Cloudflare must NOT upload as public assets.
+#
+# wrangler.jsonc points the assets directory at the repo root, which otherwise
+# publishes everything in the checkout - including .git. An exposed .git is the
+# single most commonly probed misconfiguration on the web, and it would leak the
+# whole history immediately if this repo were ever made private.
+#
+# Config files are still read at build time; this only stops them being served.
+
+.git
+.gitignore
+.assetsignore
+.claude
+tools
+README.md
+wrangler.jsonc
