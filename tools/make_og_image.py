@@ -81,7 +81,7 @@ def node(draw, x, y, w, h, label, hue, critical=False):
         outline=CRITICAL if critical else hue,
         width=3 if critical else 2,
     )
-    f = font("semi", 15)
+    f = font("semi", 13)
     draw.text(
         (x + w / 2 - text_width(draw, label, f) / 2, y + h / 2 - 11),
         label,
@@ -129,14 +129,17 @@ def main():
     d.text((72, 522), "schedulevisualiser.com", font=font("semi", 23), fill=FAINT)
 
     # ---- network diagram panel ----
-    px0, py0, px1, py1 = 656, 132, 1152, 498
+    px0, py0, px1, py1 = 644, 132, 1160, 498
     d.rounded_rectangle([px0, py0, px1, py1], radius=16, fill=PANEL,
                         outline=BORDER, width=2)
 
-    # 3 columns of nw across the panel's inner width, evenly gapped
-    nw, nh = 132, 46
-    cols = (680, 838, 996)
-    rows = (186, 278, 370)
+    # 4 columns are needed to show the real sequence - two enabling activities
+    # merging into piling, into foundations, fanning back out - without
+    # inventing logic. Node width is kept down so the ~28px column gaps stay
+    # wide enough for an arrow to actually read as an arrow.
+    nw, nh = 100, 46
+    cols = (660, 788, 916, 1044)
+    rows = (196, 278, 360)
 
     # edges first, so nodes sit on top of the arrowheads
     grey_w, red_w = 2, 3
@@ -144,16 +147,21 @@ def main():
           FAINT, grey_w)
     arrow(d, (cols[0] + nw, rows[2] + nh / 2), (cols[1] - 4, rows[1] + nh / 2),
           FAINT, grey_w)
-    arrow(d, (cols[1] + nw, rows[1] + nh / 2), (cols[2] - 4, rows[0] + nh / 2),
+    arrow(d, (cols[1] + nw, rows[1] + nh / 2), (cols[2] - 4, rows[1] + nh / 2),
           CRITICAL, red_w)
-    arrow(d, (cols[1] + nw, rows[1] + nh / 2), (cols[2] - 4, rows[2] + nh / 2),
+    arrow(d, (cols[2] + nw, rows[1] + nh / 2), (cols[3] - 4, rows[0] + nh / 2),
+          CRITICAL, red_w)
+    arrow(d, (cols[2] + nw, rows[1] + nh / 2), (cols[3] - 4, rows[2] + nh / 2),
           FAINT, grey_w)
 
+    # Colours are disciplines, so activities in the same discipline share one:
+    # survey and mobilisation are enabling works, piling and foundations civil.
     node(d, cols[0], rows[0], nw, nh, "Site survey", VIOLET)
-    node(d, cols[0], rows[2], nw, nh, "Long-lead order", AMBER)
-    node(d, cols[1], rows[1], nw, nh, "Pile design", ACCENT, critical=True)
-    node(d, cols[2], rows[0], nw, nh, "Piling", AQUA, critical=True)
-    node(d, cols[2], rows[2], nw, nh, "Utilities", ACCENT)
+    node(d, cols[0], rows[2], nw, nh, "Mobilisation", VIOLET)
+    node(d, cols[1], rows[1], nw, nh, "Piling", AQUA, critical=True)
+    node(d, cols[2], rows[1], nw, nh, "Foundations", AQUA, critical=True)
+    node(d, cols[3], rows[0], nw, nh, "Steel erection", ACCENT, critical=True)
+    node(d, cols[3], rows[2], nw, nh, "Utilities", AMBER)
 
     f_cap = font("regular", 15)
     cap = "critical path outlined in red"
