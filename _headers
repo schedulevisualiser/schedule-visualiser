@@ -2,19 +2,24 @@
 # GitHub Pages ignores this file entirely, so it is safe to commit before the
 # migration happens.
 #
-# The Content-Security-Policy is the point of moving hosts. connect-src 'none'
-# tells the browser to refuse every outbound fetch, XHR, WebSocket and beacon
-# from this origin, so "your schedule never leaves your browser" stops being a
-# promise about our code and becomes something the browser enforces and anyone
-# can verify by reading this header. The app makes no network calls after load,
-# so nothing legitimate is blocked.
+# The Content-Security-Policy is the point of moving hosts. connect-src is an
+# allow-list of every origin this page may talk to, so "your schedule never
+# leaves your browser" is enforced by the browser rather than promised by us,
+# and anyone can verify it by reading this header.
+#
+# cloudflareinsights.com is the ONLY permitted destination. It is Cloudflare's
+# cookieless Web Analytics beacon, which reports page views and load timings -
+# it never receives file contents. The .xer is parsed in memory and there is no
+# code path that sends it anywhere; the allow-list means the browser would
+# refuse even if there were.
 #
 # style-src needs 'unsafe-inline' for the style="..." attributes in the markup
-# and the inline <style> block in 404.html. script-src deliberately does NOT -
-# there is no inline script anywhere, and it stays that way.
+# and the inline <style> block in 404.html. script-src allows only 'self' plus
+# the analytics origin - there is no inline script anywhere, and it stays that
+# way.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://cloudflareinsights.com https://static.cloudflareinsights.com; form-action 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: geolocation=(), camera=(), microphone=(), usb=()
