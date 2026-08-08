@@ -7,11 +7,16 @@
 # leaves your browser" is enforced by the browser rather than promised by us,
 # and anyone can verify it by reading this header.
 #
-# cloudflareinsights.com is the ONLY permitted destination. It is Cloudflare's
-# cookieless Web Analytics beacon, which reports page views and load timings -
-# it never receives file contents. The .xer is parsed in memory and there is no
-# code path that sends it anywhere; the allow-list means the browser would
-# refuse even if there were.
+# The analytics beacon is the ONLY permitted destination. Note it reports to
+# THIS origin at /cdn-cgi/rum, not to cloudflareinsights.com - Cloudflare
+# proxies it at the edge. Allowing only that exact path, rather than 'self',
+# keeps every other same-origin request blocked: there is no endpoint on this
+# site that accepts data, and the CSP guarantees the browser would refuse to
+# send any. Do not "simplify" this to 'self'; that would quietly widen it.
+#
+# The beacon is cookieless and reports page views and load timings. It never
+# receives file contents - the .xer is parsed in memory and no code path sends
+# it anywhere.
 #
 # style-src needs 'unsafe-inline' for the style="..." attributes in the markup
 # and the inline <style> block in 404.html. script-src allows only 'self' plus
@@ -19,7 +24,7 @@
 # way.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://cloudflareinsights.com https://static.cloudflareinsights.com; form-action 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://schedulevisualiser.com/cdn-cgi/rum https://cloudflareinsights.com; form-action 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: geolocation=(), camera=(), microphone=(), usb=()
